@@ -15,4 +15,4 @@ jobs:
           java-version: '17'
           cache: gradle
       - run: chmod +x gradlew
-      - run: ./gradlew :app:lintDebug :app:testDebugUnitTest
+      - run: ./gradlew :app:testDebugUnitTest

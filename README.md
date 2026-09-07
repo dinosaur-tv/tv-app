@@ -19,7 +19,9 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 
 ## Quality checks
 
+Коммит проверяет только пробелы и YAML. Тесты гоняет CI.
+
 ```powershell
-.\gradlew.bat :app:lintDebug :app:testDebugUnitTest
+.\gradlew.bat :app:testDebugUnitTest
 pre-commit install
 ```

@@ -9,12 +9,18 @@ enum class DashboardMode(val label: String) {
 
 enum class DisplayTheme(val id: String, val label: String) {
     GALLERY("gallery", "Галерея"),
+    HOME_DAY("home-day", "Дом · День"),
+    HOME_EVENING("home-evening", "Дом · Вечер"),
     NIGHT("night", "Ночь"),
     PLAY("play", "Шалость"),
     FOREST("forest", "Лес"),
     MOUNTAINS("mountains", "Горы"),
     SEA("sea", "Море"),
-    SPACE("space", "Космос");
+    SPACE("space", "Космос"),
+    PETERSBURG("petersburg", "Петербург"),
+    ROME("rome", "Рим"),
+    FLORENCE("florence", "Флоренция"),
+    VENICE("venice", "Венеция");
 
     companion object {
         fun fromId(id: String): DisplayTheme? = entries.firstOrNull { it.id == id }
@@ -59,3 +65,8 @@ data class DashboardState(
     val agenda: List<DayAgenda>,
     val isDemo: Boolean = true,
 )
+
+object TvPower {
+    fun shouldApply(appliedAt: String, incomingAt: String): Boolean =
+        incomingAt.isNotEmpty() && incomingAt != appliedAt
+}
