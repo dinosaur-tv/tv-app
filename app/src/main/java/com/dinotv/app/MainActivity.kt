@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         screen.webChromeClient = WebChromeClient()
         screen.settings.javaScriptEnabled = true
         screen.settings.domStorageEnabled = true
-        screen.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        screen.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         screen.settings.mediaPlaybackRequiresUserGesture = false
         screen.loadUrl("https://home.dym-dino.ru/tv/")
         setContentView(screen)
