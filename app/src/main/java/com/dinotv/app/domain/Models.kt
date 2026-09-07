@@ -8,12 +8,13 @@ enum class DashboardMode(val label: String) {
 }
 
 enum class DisplayTheme(val id: String, val label: String) {
+    GALLERY("gallery", "Галерея"),
+    NIGHT("night", "Ночь"),
+    PLAY("play", "Шалость"),
     FOREST("forest", "Лес"),
-    STONE("stone", "Камень"),
-    TOBACCO("tobacco", "Табак"),
-    TAUPE("taupe", "Тауп"),
-    APPLE("apple", "Светлый"),
-    GALLERY("gallery", "Галерея");
+    MOUNTAINS("mountains", "Горы"),
+    SEA("sea", "Море"),
+    SPACE("space", "Космос");
 
     companion object {
         fun fromId(id: String): DisplayTheme? = entries.firstOrNull { it.id == id }

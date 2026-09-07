@@ -8,9 +8,12 @@ class DisplayThemeTest {
     @Test
     fun `resolves every server theme identifier`() {
         assertEquals(DisplayTheme.GALLERY, DisplayTheme.fromId("gallery"))
-        assertEquals(DisplayTheme.TOBACCO, DisplayTheme.fromId("tobacco"))
-        assertEquals(DisplayTheme.APPLE, DisplayTheme.fromId("apple"))
+        assertEquals(DisplayTheme.NIGHT, DisplayTheme.fromId("night"))
+        assertEquals(DisplayTheme.PLAY, DisplayTheme.fromId("play"))
         assertEquals(DisplayTheme.FOREST, DisplayTheme.fromId("forest"))
+        assertEquals(DisplayTheme.MOUNTAINS, DisplayTheme.fromId("mountains"))
+        assertEquals(DisplayTheme.SEA, DisplayTheme.fromId("sea"))
+        assertEquals(DisplayTheme.SPACE, DisplayTheme.fromId("space"))
     }
 
     @Test
