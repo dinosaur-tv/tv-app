@@ -1,8 +1,11 @@
 package com.dinotv.app
 
+import android.app.ActivityManager
+import android.app.ActivityOptions
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -29,7 +32,7 @@ class TvWakeService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        worker.scheduleWithFixedDelay({ poll() }, 0, 2, TimeUnit.SECONDS)
+        worker.scheduleWithFixedDelay({ poll() }, 0, 1, TimeUnit.SECONDS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
@@ -57,13 +60,88 @@ class TvWakeService : Service() {
             if (!TvPower.shouldApply(TvPrefs.powerAt(this), powerAt)) return
             TvPrefs.savePowerAt(this, powerAt)
             if (power != "on") return
-            val open = Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            }
-            startActivity(open)
+            bringDinoToFront()
         } catch (_: Exception) {
             // The remote can retry; a quiet miss is better than crashing the watchman.
         }
+    }
+
+    private fun bringDinoToFront() {
+        try {
+            val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+            for (task in am.appTasks) {
+                task.moveToFront()
+            }
+        } catch (_: Exception) {
+            // Fall through to a launch intent if the existing task cannot be raised.
+        }
+        startLaunchIntent()
+    }
+
+    private fun startLaunchIntent() {
+        val open = launchIntent()
+        if (Build.VERSION.SDK_INT >= 34) {
+            val pending = PendingIntent.getActivity(
+                this,
+                1,
+                open,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            val options = ActivityOptions.makeBasic().apply {
+                setPendingIntentBackgroundActivityStartMode(
+                    ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+                )
+            }
+            try {
+                pending.send(this, 0, null, null, null, null, options.toBundle())
+                return
+            } catch (_: Exception) {
+                pingFullScreen(open)
+            }
+        }
+        try {
+            startActivity(open)
+        } catch (_: Exception) {
+            pingFullScreen(open)
+        }
+    }
+
+    private fun launchIntent(): Intent {
+        val open = packageManager.getLeanbackLaunchIntentForPackage(packageName)
+            ?: packageManager.getLaunchIntentForPackage(packageName)
+            ?: Intent(this, MainActivity::class.java)
+        open.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or
+                Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+        )
+        return open
+    }
+
+    private fun pingFullScreen(open: Intent) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(WAKE_CHANNEL_ID, "Открытие Dino TV", NotificationManager.IMPORTANCE_HIGH),
+        )
+        val pending = PendingIntent.getActivity(
+            this,
+            2,
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager.notify(
+            WAKE_NOTIFICATION_ID,
+            NotificationCompat.Builder(this, WAKE_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_dino)
+                .setContentTitle("Dino TV")
+                .setContentText("Открываю домашний экран")
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(pending, true)
+                .setAutoCancel(true)
+                .build(),
+        )
     }
 
     private fun notification(): Notification {
@@ -82,7 +160,9 @@ class TvWakeService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "dino_tv_wake"
+        private const val WAKE_CHANNEL_ID = "dino_tv_open"
         private const val NOTIFICATION_ID = 7
+        private const val WAKE_NOTIFICATION_ID = 8
         private const val SNAPSHOT_URL = "https://api.dym-dino.ru/v1/display/snapshot"
     }
 }

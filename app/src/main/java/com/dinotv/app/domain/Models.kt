@@ -20,7 +20,11 @@ enum class DisplayTheme(val id: String, val label: String) {
     PETERSBURG("petersburg", "Петербург"),
     ROME("rome", "Рим"),
     FLORENCE("florence", "Флоренция"),
-    VENICE("venice", "Венеция");
+    VENICE("venice", "Венеция"),
+    RUS("rus", "Русский узор"),
+    BYZANTIUM("byzantium", "Византия"),
+    INDIA("india", "Индия"),
+    ITALY("italy", "Итальянский узор");
 
     companion object {
         fun fromId(id: String): DisplayTheme? = entries.firstOrNull { it.id == id }

@@ -20,6 +20,10 @@ class DisplayThemeTest {
         assertEquals(DisplayTheme.ROME, DisplayTheme.fromId("rome"))
         assertEquals(DisplayTheme.FLORENCE, DisplayTheme.fromId("florence"))
         assertEquals(DisplayTheme.VENICE, DisplayTheme.fromId("venice"))
+        assertEquals(DisplayTheme.RUS, DisplayTheme.fromId("rus"))
+        assertEquals(DisplayTheme.BYZANTIUM, DisplayTheme.fromId("byzantium"))
+        assertEquals(DisplayTheme.INDIA, DisplayTheme.fromId("india"))
+        assertEquals(DisplayTheme.ITALY, DisplayTheme.fromId("italy"))
     }
 
     @Test
