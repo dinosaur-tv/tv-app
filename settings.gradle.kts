@@ -16,4 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "dino-tv"
 include(":app")
-

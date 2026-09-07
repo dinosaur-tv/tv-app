@@ -1,0 +1,15 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: local
+    hooks:
+      - id: android-quality
+        name: Android lint and tests
+        entry: powershell -NoProfile -ExecutionPolicy Bypass -Command "& .\gradlew.bat :app:lintDebug :app:testDebugUnitTest"
+        language: system
+        pass_filenames: false
+        files: '^(app/.*\.(kt|xml)|gradle/.*\.toml|.*\.gradle\.kts)$'

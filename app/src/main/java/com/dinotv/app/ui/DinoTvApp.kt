@@ -84,6 +84,7 @@ private fun paletteFor(theme: DisplayTheme) = when (theme) {
     DisplayTheme.TOBACCO -> DinoPalette(Color(0xFF2A201A), Color(0xD9382C24), Color(0xFFF5EADD), Color(0xFFCAB9A8), Color(0xFFD5A36B), Color(0xFF5D4939), Color(0x334D3021), Color(0xFF47352A))
     DisplayTheme.TAUPE -> DinoPalette(Color(0xFF282421), Color(0xD938322D), Color(0xFFF1EDE7), Color(0xFFC2BAB1), Color(0xFFBAA18B), Color(0xFF584E46), Color(0x332F2925), Color(0xFF403932))
     DisplayTheme.APPLE -> DinoPalette(Color(0xFFF5F5F7), Color(0xF2FFFFFF), Color(0xFF1D1D1F), Color(0xFF6E6E73), Color(0xFF0071E3), Color(0xFFD2D2D7), Color(0x1A0071E3), Color(0xFFE8F2FF))
+    DisplayTheme.GALLERY -> DinoPalette(Color(0xFF171614), Color(0xDE211E1A), Color(0xFFEFE6D7), Color(0xFFA89E90), Color(0xFFB28C54), Color(0xFF5A4737), Color(0x337F3437), Color(0xFF2D261F))
 }
 
 private val LocalDinoPalette = androidx.compose.runtime.staticCompositionLocalOf { paletteFor(DisplayTheme.FOREST) }

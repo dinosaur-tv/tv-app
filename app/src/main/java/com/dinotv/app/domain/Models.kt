@@ -12,7 +12,12 @@ enum class DisplayTheme(val id: String, val label: String) {
     STONE("stone", "Камень"),
     TOBACCO("tobacco", "Табак"),
     TAUPE("taupe", "Тауп"),
-    APPLE("apple", "Светлый")
+    APPLE("apple", "Светлый"),
+    GALLERY("gallery", "Галерея");
+
+    companion object {
+        fun fromId(id: String): DisplayTheme? = entries.firstOrNull { it.id == id }
+    }
 }
 
 data class Weather(

@@ -7,7 +7,7 @@
     <application
         android:allowBackup="false"
         android:banner="@drawable/dino_tv_banner"
-        android:icon="@drawable/ic_dino"
+        android:icon="@drawable/dino_icon"
         android:label="Dino TV"
         android:theme="@style/Theme.DinoTV"
         android:usesCleartextTraffic="false">

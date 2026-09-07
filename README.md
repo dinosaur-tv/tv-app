@@ -28,6 +28,14 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 .\gradlew.bat :app:assembleDebug
 ```
 
+## Quality checks
+
+Установите `pre-commit`, затем в папке проекта выполните `pre-commit install`. Перед коммитом запускаются Android Lint и unit-тесты; вручную их можно прогнать так:
+
+```powershell
+.\gradlew.bat :app:lintDebug :app:testDebugUnitTest
+```
+
 ## Архитектура интеграций
 
 Телевизор **не** ходит в Google Calendar и Telegram напрямую. Приватный сервис делает OAuth-подключение каждого человека, хранит refresh token в шифрованном хранилище, агрегирует выбранные календари и отправляет телевизору единый read-only снимок.
