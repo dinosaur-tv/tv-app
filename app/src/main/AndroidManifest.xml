@@ -15,6 +15,7 @@
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
             android:exported="true"
+            android:hardwareAccelerated="true"
             android:label="@string/app_name"
             android:screenOrientation="landscape">
             <intent-filter>
@@ -26,14 +27,5 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
-        <service
-            android:name=".media.YandexMusicObserverService"
-            android:exported="false"
-            android:label="Dino TV: музыка"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
     </application>
 </manifest>

@@ -10,6 +10,7 @@ class DisplayThemeTest {
         assertEquals(DisplayTheme.GALLERY, DisplayTheme.fromId("gallery"))
         assertEquals(DisplayTheme.TOBACCO, DisplayTheme.fromId("tobacco"))
         assertEquals(DisplayTheme.APPLE, DisplayTheme.fromId("apple"))
+        assertEquals(DisplayTheme.FOREST, DisplayTheme.fromId("forest"))
     }
 
     @Test

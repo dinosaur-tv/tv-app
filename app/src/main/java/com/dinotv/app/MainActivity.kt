@@ -1,22 +1,27 @@
 package com.dinotv.app
 
+import android.annotation.SuppressLint
 import android.os.Bundle
 import android.view.WindowManager
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.core.view.WindowCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.dinotv.app.ui.DinoTvApp
-import com.dinotv.app.ui.DinoTvViewModel
 
 class MainActivity : ComponentActivity() {
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        setContent {
-            val dashboard: DinoTvViewModel = viewModel()
-            DinoTvApp(viewModel = dashboard)
-        }
+        val screen = WebView(this)
+        screen.webViewClient = WebViewClient()
+        screen.webChromeClient = WebChromeClient()
+        screen.settings.javaScriptEnabled = true
+        screen.settings.domStorageEnabled = true
+        screen.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        screen.settings.mediaPlaybackRequiresUserGesture = false
+        screen.loadUrl("https://home.dym-dino.ru/tv/")
+        setContentView(screen)
     }
 }

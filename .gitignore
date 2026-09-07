@@ -6,3 +6,7 @@ app/build/
 local.properties
 *.iml
 keystore.properties
+*.apk
+*.aab
+captures/
+.DS_Store
