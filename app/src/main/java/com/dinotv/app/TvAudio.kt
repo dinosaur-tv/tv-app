@@ -21,6 +21,17 @@ object TvAudio {
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, TvVolume.streamValue(percent, max), 0)
     }
 
+    fun adjustVolume(context: Context, direction: Int) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
+    }
+
+    fun toggleMute(context: Context) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        @Suppress("DEPRECATION")
+        audio.setStreamMute(AudioManager.STREAM_MUSIC, !audio.isStreamMute(AudioManager.STREAM_MUSIC))
+    }
+
     fun abandon(context: Context) {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         @Suppress("DEPRECATION")

@@ -18,7 +18,9 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.dinotv.app.domain.MusicRemote
+import com.dinotv.app.domain.TvRemote
 import com.dinotv.app.domain.EventReminders
+import android.media.AudioManager
 import com.dinotv.app.domain.IncomingEvent
 import com.dinotv.app.domain.TvPower
 import com.dinotv.app.domain.TvWakePolicy
@@ -69,6 +71,7 @@ class TvWakeService : Service() {
             val json = JSONObject(body)
             maybeCue(json)
             maybeMusicCommand(json)
+            maybeTvCommand(json)
             val power = json.optString("power", "on")
             val powerAt = json.optString("powerAt", "")
             if (!TvPower.shouldApply(TvPrefs.powerAt(this), powerAt)) return
@@ -86,6 +89,42 @@ class TvWakeService : Service() {
             requestForeground()
         } catch (_: Exception) {
             // The remote can retry; a quiet miss is better than crashing the watchman.
+        }
+    }
+
+    private fun maybeTvCommand(json: JSONObject) {
+        val cmd = json.optJSONObject("tvCommand") ?: return
+        val command = TvRemote.take(
+            cmd.optString("action"),
+            cmd.optString("at"),
+            app = cmd.optString("app").ifBlank { null },
+            key = cmd.optString("key").ifBlank { null },
+        ) ?: return
+        if (command.at == TvPrefs.tvCommandAt(this)) return
+        TvPrefs.saveTvCommandAt(this, command.at)
+        main.post { applyTvCommand(command.action, command.app, command.key) }
+    }
+
+    private fun applyTvCommand(action: String, app: String?, key: String?) {
+        when (action) {
+            "launch" -> {
+                LivingRoomOverlay.hide()
+                if (app != null) TvApps.open(this, app)
+            }
+            "key" -> when (key) {
+                "volume_up" -> TvAudio.adjustVolume(this, AudioManager.ADJUST_RAISE)
+                "volume_down" -> TvAudio.adjustVolume(this, AudioManager.ADJUST_LOWER)
+                "mute" -> TvAudio.toggleMute(this)
+                "play_pause" -> NowPlayingDesk.apply(this, "toggle", null)
+                "home" -> {
+                    LivingRoomOverlay.hide()
+                    if (!RemoteAccessibilityService.press("home")) {
+                        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(home)
+                    }
+                }
+                "back", "up", "down", "left", "right", "ok" -> RemoteAccessibilityService.press(key)
+            }
         }
     }
 

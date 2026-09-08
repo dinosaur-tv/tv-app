@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Dino TV</string>
+    <string name="remote_access_description">Нужен, чтобы пульт в телефоне нажимал Назад, ОК и стрелки на телевизоре.</string>
 </resources>

@@ -10,6 +10,7 @@ object TvPrefs {
     private const val OVERLAY_PROMPTED = "overlayPrompted"
     private const val LISTENER_PROMPTED = "listenerPrompted"
     private const val MUSIC_COMMAND_AT = "musicCommandAt"
+    private const val TV_COMMAND_AT = "tvCommandAt"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -53,5 +54,11 @@ object TvPrefs {
 
     fun saveMusicCommandAt(context: Context, token: String) {
         prefs(context).edit().putString(MUSIC_COMMAND_AT, token).apply()
+    }
+
+    fun tvCommandAt(context: Context): String = prefs(context).getString(TV_COMMAND_AT, "").orEmpty()
+
+    fun saveTvCommandAt(context: Context, token: String) {
+        prefs(context).edit().putString(TV_COMMAND_AT, token).apply()
     }
 }
