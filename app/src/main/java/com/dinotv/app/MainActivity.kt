@@ -1,21 +1,16 @@
 package com.dinotv.app
 
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.WindowManager
-import android.webkit.WebChromeClient
-import android.webkit.WebSettings
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
-    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 27) {
@@ -24,16 +19,10 @@ class MainActivity : ComponentActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         askOverlayPermission()
+        askNotificationAccess()
         startWakeService()
         val screen = WebView(this)
-        screen.webViewClient = WebViewClient()
-        screen.webChromeClient = WebChromeClient()
-        screen.settings.javaScriptEnabled = true
-        screen.settings.domStorageEnabled = true
-        screen.settings.cacheMode = WebSettings.LOAD_NO_CACHE
-        screen.settings.mediaPlaybackRequiresUserGesture = false
-        screen.addJavascriptInterface(DinoTvBridge(this), "DinoTV")
-        screen.loadUrl("https://home.dym-dino.ru/tv/")
+        TvScreen.bind(screen, DinoTvBridge(this) { finish() }, TvPrefs.session(this))
         setContentView(screen)
     }
 
@@ -46,11 +35,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         TvForeground.visible = true
+        TvAudio.abandon(this)
         startWakeService()
     }
 
     override fun onPause() {
-        TvForeground.visible = false
+        if (!LivingRoomOverlay.visible) TvForeground.visible = false
         super.onPause()
     }
 
@@ -67,6 +57,16 @@ class MainActivity : ComponentActivity() {
             )
         } catch (_: Exception) {
             // Some Android TV builds hide this screen; the overlay simply will not appear.
+        }
+    }
+
+    private fun askNotificationAccess() {
+        if (TvPrefs.listenerPrompted(this)) return
+        TvPrefs.markListenerPrompted(this)
+        try {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        } catch (_: Exception) {
+            // Android TV often hides this screen; ADB or the overlay still work without it.
         }
     }
 }

@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <receiver
+            android:name=".DebugOverlayReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.dinotv.app.DEBUG_OVERLAY" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

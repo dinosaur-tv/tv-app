@@ -15,10 +15,13 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
+import com.dinotv.app.domain.MusicRemote
 import com.dinotv.app.domain.EventReminders
 import com.dinotv.app.domain.IncomingEvent
 import com.dinotv.app.domain.TvPower
+import com.dinotv.app.domain.TvWakePolicy
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -54,24 +57,64 @@ class TvWakeService : Service() {
         val session = TvPrefs.session(this)
         if (session.isBlank()) return
         try {
+            reportNowPlaying()
             val connection = URL(SNAPSHOT_URL).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("Authorization", "Bearer $session")
-            connection.setRequestProperty("X-Dino-Visible", "0")
+            connection.setRequestProperty("X-Dino-Visible", if (TvForeground.visible) "1" else "0")
             connection.connectTimeout = 4_000
             connection.readTimeout = 4_000
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             connection.disconnect()
             val json = JSONObject(body)
             maybeCue(json)
+            maybeMusicCommand(json)
             val power = json.optString("power", "on")
             val powerAt = json.optString("powerAt", "")
             if (!TvPower.shouldApply(TvPrefs.powerAt(this), powerAt)) return
             TvPrefs.savePowerAt(this, powerAt)
-            if (power != "on") return
+            if (power != "on") {
+                main.post { LivingRoomOverlay.hide() }
+                return
+            }
+            val track = NowPlayingDesk.current(this)
+            if (TvWakePolicy.keepHostPlaying(TvAudio.isPlaying(this), Settings.canDrawOverlays(this), track != null)) {
+                main.post { LivingRoomOverlay.show(this) }
+                return
+            }
+            main.post { LivingRoomOverlay.hide() }
             requestForeground()
         } catch (_: Exception) {
             // The remote can retry; a quiet miss is better than crashing the watchman.
+        }
+    }
+
+    private fun maybeMusicCommand(json: JSONObject) {
+        val cmd = json.optJSONObject("musicCommand") ?: return
+        val volume = if (cmd.has("volume") && !cmd.isNull("volume")) cmd.optInt("volume") else null
+        val command = MusicRemote.take(cmd.optString("action"), cmd.optString("at"), volume) ?: return
+        if (command.at == TvPrefs.musicCommandAt(this)) return
+        TvPrefs.saveMusicCommandAt(this, command.at)
+        main.post { NowPlayingDesk.apply(this, command.action, command.volume) }
+    }
+
+    private fun reportNowPlaying() {
+        val session = TvPrefs.session(this)
+        if (session.isBlank()) return
+        try {
+            val payload = NowPlayingDesk.reportJson(this)
+            val connection = URL(NOW_PLAYING_URL).openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $session")
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.connectTimeout = 4_000
+            connection.readTimeout = 4_000
+            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            connection.inputStream.bufferedReader().use { it.readText() }
+            connection.disconnect()
+        } catch (_: Exception) {
+            // The remote can wait for the next beat.
         }
     }
 
@@ -217,5 +260,6 @@ class TvWakeService : Service() {
         private const val NOTIFICATION_ID = 7
         private const val WAKE_NOTIFICATION_ID = 8
         private const val SNAPSHOT_URL = "https://api.dym-dino.ru/v1/display/snapshot"
+        private const val NOW_PLAYING_URL = "https://api.dym-dino.ru/v1/display/now-playing"
     }
 }
