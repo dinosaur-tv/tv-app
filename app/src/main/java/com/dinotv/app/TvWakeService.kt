@@ -62,6 +62,7 @@ class TvWakeService : Service() {
         if (session.isBlank()) return
         try {
             RemoteAccess.ensureEnabled(this)
+            NotificationAccess.ensureEnabled(this)
             reportNowPlaying()
             val connection = URL(SNAPSHOT_URL).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"

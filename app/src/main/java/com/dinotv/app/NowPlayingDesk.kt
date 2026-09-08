@@ -40,29 +40,62 @@ object NowPlayingDesk {
     }
 
     private fun activeController(context: Context): MediaController? {
+        NotificationAccess.ensureEnabled(context)
         val manager = context.getSystemService(MediaSessionManager::class.java) ?: return null
         val listener = ComponentName(context, NowPlayingListener::class.java)
         val sessions = try {
             manager.getActiveSessions(listener)
         } catch (_: SecurityException) {
+            NotificationAccess.ensureEnabled(context)
             emptyList()
         }
-        return sessions.firstOrNull { from(it, context) != null }
+        if (sessions.isEmpty()) return null
+        val ranked = sessions.mapNotNull { controller ->
+            val track = from(controller, context) ?: return@mapNotNull null
+            controller to track
+        }
+        return ranked.firstOrNull { (controller, track) ->
+            track.isPlaying && isMusicPackage(controller.packageName)
+        }?.first
+            ?: ranked.firstOrNull { (_, track) -> track.isPlaying }?.first
+            ?: ranked.firstOrNull { (controller, _) -> isMusicPackage(controller.packageName) }?.first
+            ?: ranked.firstOrNull()?.first
+    }
+
+    private fun isMusicPackage(packageName: String): Boolean {
+        val name = packageName.lowercase()
+        return name.contains("kinopoisk") || name.contains("yandex") || name.contains("music")
     }
 
     private fun from(controller: MediaController, context: Context): NowPlayingTrack? {
-        val meta = controller.metadata ?: return null
+        val meta = controller.metadata
         val state = controller.playbackState?.state
         val playing = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
+        val title = meta?.string(
+            MediaMetadata.METADATA_KEY_TITLE,
+            MediaMetadata.METADATA_KEY_DISPLAY_TITLE,
+        ) ?: meta?.description?.title?.toString()?.trim()?.ifBlank { null }
+        val artist = meta?.string(
+            MediaMetadata.METADATA_KEY_ARTIST,
+            MediaMetadata.METADATA_KEY_ALBUM_ARTIST,
+            MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE,
+        ) ?: meta?.description?.subtitle?.toString()?.trim()?.ifBlank { null }
+        val album = meta?.string(
+            MediaMetadata.METADATA_KEY_ALBUM,
+            MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION,
+        ) ?: meta?.description?.description?.toString()?.trim()?.ifBlank { null }
+        // Kinopoisk sometimes exposes a playing session with empty title — still report so the
+        // phone/overlay know music is live (volume + transport stay available).
         return NowPlayingMeta.from(
             controller.packageName,
-            meta.string(MediaMetadata.METADATA_KEY_TITLE, MediaMetadata.METADATA_KEY_DISPLAY_TITLE),
-            meta.string(MediaMetadata.METADATA_KEY_ARTIST, MediaMetadata.METADATA_KEY_ALBUM_ARTIST, MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE),
-            meta.string(MediaMetadata.METADATA_KEY_ALBUM, MediaMetadata.METADATA_KEY_DISPLAY_DESCRIPTION),
+            title,
+            artist,
+            album,
             playing,
             TvAudio.volumePercent(context),
             100,
-            artwork(meta),
+            meta?.let { artwork(it) }.orEmpty(),
+            allowUntitled = playing || TvAudio.isPlaying(context),
         )
     }
 

@@ -57,10 +57,15 @@ object NowPlayingMeta {
         volume: Int? = null,
         volumeMax: Int? = null,
         artworkUrl: String = "",
+        allowUntitled: Boolean = false,
     ): NowPlayingTrack? {
-        val name = title?.trim().orEmpty()
-        if (name.isEmpty()) return null
+        var name = title?.trim().orEmpty()
+        if (name.isEmpty()) {
+            if (!allowUntitled) return null
+            name = sourceFor(packageName)
+        }
         val who = artist?.trim().orEmpty().ifBlank { album?.trim().orEmpty() }
+        // `volume` may already be a 0–100 percent (volumeMax=100) or a raw stream level.
         val percent = if (volume != null && volumeMax != null && volumeMax > 0) {
             (100 * volume / volumeMax).coerceIn(0, 100)
         } else {

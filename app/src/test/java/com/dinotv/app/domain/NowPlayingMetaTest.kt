@@ -33,6 +33,20 @@ class NowPlayingMetaTest {
     }
 
     @Test
+    fun `keeps a playing untitled session alive for the remote`() {
+        val track = NowPlayingMeta.from(
+            "ru.kinopoisk.tv",
+            "  ",
+            null,
+            null,
+            true,
+            allowUntitled = true,
+        )
+        assertEquals("Яндекс Музыка", track?.title)
+        assertEquals(true, track?.isPlaying)
+    }
+
+    @Test
     fun `scales volume only when the stream actually reports it`() {
         assertEquals(40, NowPlayingMeta.from("ru.kinopoisk.tv", "Chica", "Dos Ton", null, true, 4, 10)?.volumePercent)
         assertNull(NowPlayingMeta.from("ru.kinopoisk.tv", "Chica", "Dos Ton", null, true, 0, 0)?.volumePercent)
