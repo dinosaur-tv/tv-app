@@ -17,7 +17,7 @@ data class EventCue(
 )
 
 object EventReminders {
-    const val LEAD_MINUTES = 5
+    val LEADS = listOf(30, 5)
 
     fun next(
         events: List<IncomingEvent>,
@@ -25,27 +25,36 @@ object EventReminders {
         shownIds: Set<String>,
         privacy: Boolean,
         showCalendar: Boolean,
-        leadMinutes: Int = LEAD_MINUTES,
+        leads: List<Int> = LEADS,
     ): EventCue? {
         if (privacy || !showCalendar) return null
         val upcoming = events
             .filter { event ->
                 !event.allDay && event.id.isNotBlank() && event.start.isNotBlank() && startMs(event.start) > nowMs
             }
-            .sortedBy { it.start }
+            .sortedBy { startMs(it.start) }
         for (event in upcoming) {
-            if (event.id in shownIds) continue
             val minutes = ((startMs(event.start) - nowMs + 30_000) / 60_000).toInt().coerceAtLeast(1)
-            if (minutes > leadMinutes) return null
-            return EventCue(
-                id = event.id,
-                title = event.title.ifBlank { "Дело" },
-                owner = event.owner,
-                start = event.start,
-                minutes = minutes,
-            )
+            for (lead in leads) {
+                if (!inBand(minutes, lead)) continue
+                val cueId = "${event.id}@$lead"
+                if (cueId in shownIds) continue
+                return EventCue(
+                    id = cueId,
+                    title = event.title.ifBlank { "Дело" },
+                    owner = event.owner,
+                    start = event.start,
+                    minutes = minutes,
+                )
+            }
         }
         return null
+    }
+
+    fun inBand(minutes: Int, lead: Int): Boolean = when (lead) {
+        30 -> minutes in 6..30
+        5 -> minutes in 1..5
+        else -> minutes in 1..lead
     }
 
     fun minutesPhrase(minutes: Int): String {

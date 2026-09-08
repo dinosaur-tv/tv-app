@@ -186,8 +186,9 @@ class TvWakeService : Service() {
             display.optBoolean("privacy", false),
             display.optBoolean("showCalendar", true),
         ) ?: return
-        if (!TvPrefs.markCueShown(this, cue.id)) return
+        // While Dino itself is on screen the WebView card handles the cue.
         if (TvForeground.visible) return
+        if (!TvPrefs.markCueShown(this, cue.id)) return
         main.post { EventOverlay.show(this, cue) }
     }
 

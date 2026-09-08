@@ -22,7 +22,7 @@ class MainActivity : ComponentActivity() {
         askNotificationAccess()
         startWakeService()
         val screen = WebView(this)
-        TvScreen.bind(screen, DinoTvBridge(this) { finish() }, TvPrefs.session(this))
+        TvScreen.bind(screen, DinoTvBridge(this) { moveTaskToBack(true) }, TvPrefs.session(this))
         setContentView(screen)
     }
 
