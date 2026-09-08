@@ -90,8 +90,19 @@ object RemoteCursor {
         ensure(context)
         val metrics = metrics(context.applicationContext)
         val inset = 24f
-        x = (x + dx).coerceIn(inset, metrics.widthPixels - inset)
-        y = (y + dy).coerceIn(inset, metrics.heightPixels - inset)
+        setPosition(
+            context,
+            (x + dx).coerceIn(inset, metrics.widthPixels - inset),
+            (y + dy).coerceIn(inset, metrics.heightPixels - inset),
+        )
+    }
+
+    fun setPosition(context: Context, nextX: Float, nextY: Float) {
+        ensure(context)
+        val metrics = metrics(context.applicationContext)
+        val inset = 24f
+        x = nextX.coerceIn(inset, metrics.widthPixels - inset)
+        y = nextY.coerceIn(inset, metrics.heightPixels - inset)
         val dot = view
         if (dot == null) {
             Log.w(TAG, "move ignored; cursor not visible")

@@ -41,13 +41,7 @@ class RemoteAccessibilityService : AccessibilityService() {
                 RemoteCursor.hide()
                 performGlobalAction(GLOBAL_ACTION_HOME) || openHome()
             }
-            "ok" -> {
-                if (RemoteCursor.visible) {
-                    tapCursor() || injectKey(KeyEvent.KEYCODE_DPAD_CENTER) || clickFocused() || tapCenter()
-                } else {
-                    injectKey(KeyEvent.KEYCODE_DPAD_CENTER) || clickFocused() || clickVirtual() || tapCenter()
-                }
-            }
+            "ok" -> activateCursorOrFocus()
             "up" -> move(View.FOCUS_UP)
             "down" -> move(View.FOCUS_DOWN)
             "left" -> move(View.FOCUS_LEFT)
@@ -58,9 +52,36 @@ class RemoteAccessibilityService : AccessibilityService() {
         false
     }
 
+    /** After the wake service nudges the cursor, snap onto the nearest tile. */
+    fun snapCursor(): Boolean {
+        if (!RemoteCursor.visible) return false
+        val target = nearestTarget(RemoteCursor.pointX, RemoteCursor.pointY) ?: return false
+        val box = Rect().also { target.getBoundsInScreen(it) }
+        RemoteCursor.setPosition(this, box.centerX().toFloat(), box.centerY().toFloat())
+        virtualFocusBox = Rect(box)
+        target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        target.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
+        target.performAction(AccessibilityNodeInfo.ACTION_SELECT)
+        return true
+    }
+
+    private fun activateCursorOrFocus(): Boolean {
+        if (RemoteCursor.visible) {
+            val x = RemoteCursor.pointX
+            val y = RemoteCursor.pointY
+            val node = nodeAt(x, y) ?: nearestTarget(x, y)
+            if (node != null && activate(node)) return true
+            // Compose often needs a real gesture; do a firm press, then a quick second tap.
+            if (pressAt(x, y)) {
+                mainHandler.postDelayed({ tapAt(x, y) }, 90)
+                return true
+            }
+            return tapAt(x, y)
+        }
+        return injectKey(KeyEvent.KEYCODE_DPAD_CENTER) || clickFocused() || clickVirtual() || tapCenter()
+    }
+
     private fun move(direction: Int): Boolean {
-        // Only count a move as handled when a real focus change happened.
-        // Gestures/scrolls often return true without moving Kinopoisk Compose focus.
         if (injectKey(directionKey(direction))) return true
         return stepFocus(direction)
     }
@@ -69,6 +90,62 @@ class RemoteAccessibilityService : AccessibilityService() {
         if (!RemoteCursor.visible) return false
         return tapAt(RemoteCursor.pointX, RemoteCursor.pointY)
     }
+
+    private fun nodeAt(x: Float, y: Float): AccessibilityNodeInfo? {
+        val root = activeRoot() ?: return null
+        val px = x.toInt()
+        val py = y.toInt()
+        var best: AccessibilityNodeInfo? = null
+        var bestArea = Int.MAX_VALUE
+        for (node in walk(root)) {
+            if (!node.isVisibleToUser || node.isEditable) continue
+            val className = node.className?.toString().orEmpty()
+            if (className.contains("EditText", ignoreCase = true)) continue
+            val box = Rect().also { node.getBoundsInScreen(it) }
+            if (!box.contains(px, py)) continue
+            if (!(node.isClickable || node.isFocusable || node.isSelected)) continue
+            val area = box.width() * box.height()
+            // Prefer real tiles over giant wrappers and over tiny icons.
+            if (area < 4_000 || area > 900_000) continue
+            if (area < bestArea) {
+                best = node
+                bestArea = area
+            }
+        }
+        return best
+    }
+
+    private fun nearestTarget(x: Float, y: Float): AccessibilityNodeInfo? {
+        val root = activeRoot() ?: return null
+        val metrics = screenSize()
+        val maxDist = minOf(metrics.widthPixels, metrics.heightPixels) * 0.18f
+        var best: AccessibilityNodeInfo? = null
+        var bestScore = Float.MAX_VALUE
+        for (node in focusCandidates(root)) {
+            val box = Rect().also { node.getBoundsInScreen(it) }
+            val cx = box.centerX().toFloat()
+            val cy = box.centerY().toFloat()
+            val dist = kotlin.math.hypot((cx - x).toDouble(), (cy - y).toDouble()).toFloat()
+            if (dist > maxDist) continue
+            // Prefer smaller tiles so posters win over giant containers.
+            val score = dist + (box.width() + box.height()) * 0.02f
+            if (score < bestScore) {
+                best = node
+                bestScore = score
+            }
+        }
+        return best
+    }
+
+    private fun pressAt(x: Float, y: Float): Boolean = try {
+        val path = Path().apply { moveTo(x, y) }
+        val stroke = GestureDescription.StrokeDescription(path, 0, 160)
+        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
+    } catch (_: Throwable) {
+        false
+    }
+
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun stepFocus(direction: Int): Boolean {
         val root = activeRoot() ?: return false
@@ -156,9 +233,13 @@ class RemoteAccessibilityService : AccessibilityService() {
 
     private fun activate(node: AccessibilityNodeInfo): Boolean {
         if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        if (node.performAction(AccessibilityNodeInfo.ACTION_SELECT)) {
+            // Some TV rows select first; a second click opens.
+            if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+        }
         var parent = node.parent
         var hops = 0
-        while (parent != null && hops < 8) {
+        while (parent != null && hops < 10) {
             if (parent.isClickable && parent.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
             parent = parent.parent
             hops += 1
@@ -213,12 +294,15 @@ class RemoteAccessibilityService : AccessibilityService() {
         val metrics = screenSize()
         return walk(root).filter { node ->
             if (!node.isVisibleToUser) return@filter false
+            if (node.isEditable) return@filter false
+            val className = node.className?.toString().orEmpty()
+            if (className.contains("EditText", ignoreCase = true)) return@filter false
             if (!(node.isClickable || node.isFocusable || node.isSelected)) return@filter false
             val box = Rect().also { node.getBoundsInScreen(it) }
             if (box.isEmpty) return@filter false
-            // Ignore full-screen containers; keep posters / menu rows.
-            box.width() in 48 until (metrics.widthPixels - 40) &&
-                box.height() in 48 until (metrics.heightPixels - 40)
+            // Ignore full-screen containers and tiny chrome; keep posters / menu rows.
+            box.width() in 64 until (metrics.widthPixels - 40) &&
+                box.height() in 48 until (metrics.heightPixels - 80)
         }
     }
 
@@ -358,6 +442,12 @@ class RemoteAccessibilityService : AccessibilityService() {
 
         fun press(key: String): Boolean = try {
             instance?.press(key) ?: false
+        } catch (_: Throwable) {
+            false
+        }
+
+        fun snapCursor(): Boolean = try {
+            instance?.snapCursor() ?: false
         } catch (_: Throwable) {
             false
         }

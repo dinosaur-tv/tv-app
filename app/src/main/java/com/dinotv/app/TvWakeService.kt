@@ -246,7 +246,8 @@ class TvWakeService : Service() {
 
     private fun nudgeCursor(key: String) {
         val metrics = resources.displayMetrics
-        val step = minOf(metrics.widthPixels, metrics.heightPixels) * 0.09f
+        // Smaller steps so music tiles / rows are reachable.
+        val step = minOf(metrics.widthPixels, metrics.heightPixels) * 0.045f
         val (dx, dy) = when (key) {
             "up" -> 0f to -step
             "down" -> 0f to step
@@ -254,6 +255,8 @@ class TvWakeService : Service() {
             else -> step to 0f
         }
         RemoteCursor.move(this, dx, dy)
+        // Stick to the nearest poster / row item under the cursor.
+        RemoteAccessibilityService.snapCursor()
     }
 
     private fun cancelDinoWake() {
