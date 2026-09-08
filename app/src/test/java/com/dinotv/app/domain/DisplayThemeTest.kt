@@ -6,6 +6,11 @@ import org.junit.Test
 
 class DisplayThemeTest {
     @Test
+    fun `offers today tomorrow and week dashboard modes`() {
+        assertEquals(listOf("Сегодня", "Завтра", "Неделя"), DashboardMode.entries.map { it.label })
+    }
+
+    @Test
     fun `resolves every server theme identifier`() {
         assertEquals(DisplayTheme.GALLERY, DisplayTheme.fromId("gallery"))
         assertEquals(DisplayTheme.HOME_DAY, DisplayTheme.fromId("home-day"))

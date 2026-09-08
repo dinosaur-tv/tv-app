@@ -4,7 +4,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 enum class DashboardMode(val label: String) {
-    NOW("Сейчас"), TODAY("Сегодня"), WEEK("Неделя")
+    TODAY("Сегодня"), TOMORROW("Завтра"), WEEK("Неделя")
 }
 
 enum class DisplayTheme(val id: String, val label: String) {
