@@ -12,8 +12,8 @@ android {
         applicationId = "com.dinotv.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "0.3.19"
+        versionCode = 25
+        versionName = "0.3.22"
     }
 
     buildFeatures { compose = true; buildConfig = true }

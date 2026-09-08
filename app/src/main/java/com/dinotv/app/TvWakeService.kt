@@ -188,14 +188,8 @@ class TvWakeService : Service() {
                         }
                         "ok" -> {
                             if (RemoteAccessibilityService.needsPointer()) {
-                                if (!RemoteCursor.visible) {
-                                    val metrics = resources.displayMetrics
-                                    RemoteCursor.setPosition(
-                                        this,
-                                        metrics.widthPixels * 0.37f,
-                                        metrics.heightPixels * 0.50f,
-                                    )
-                                }
+                                // Keep cursor coords for aimed tiles, but activation prefers
+                                // native focus + music CTA hotspots over a stray pointer miss.
                                 RemoteAccessibilityService.press("ok")
                             } else {
                                 RemoteCursor.hide()

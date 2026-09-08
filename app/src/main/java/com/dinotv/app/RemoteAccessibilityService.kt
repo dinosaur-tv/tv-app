@@ -105,32 +105,94 @@ class RemoteAccessibilityService : AccessibilityService() {
     }
 
     private fun activateCursorOrFocus(): Boolean {
+        if (isPointerApp()) {
+            return activateKinopoisk()
+        }
         if (RemoteCursor.visible) {
-            val x = RemoteCursor.pointX
-            val y = RemoteCursor.pointY
-            val node = nodeAt(x, y) ?: nearestTarget(x, y, contentOnly = x > navRailRight())
-            if (node != null && activate(node)) return true
-            if (pressAt(x, y)) {
-                mainHandler.postDelayed({ tapAt(x, y) }, 90)
-                return true
-            }
-            return tapAt(x, y)
+            return activateAt(RemoteCursor.pointX, RemoteCursor.pointY)
         }
         if (injectKey(KeyEvent.KEYCODE_DPAD_CENTER)) return true
         if (clickFocused() || clickVirtual()) return true
-        // Only spawn the soft pointer inside Kinopoisk — never on the launcher.
-        if (isPointerApp()) {
-            val metrics = screenSize()
-            RemoteCursor.setPosition(this, metrics.widthPixels * 0.37f, metrics.heightPixels * 0.50f)
-            val x = RemoteCursor.pointX
-            val y = RemoteCursor.pointY
-            if (pressAt(x, y)) {
-                mainHandler.postDelayed({ tapAt(x, y) }, 90)
-                return true
-            }
-            return tapAt(x, y)
-        }
         return tapCenter()
+    }
+
+    /**
+     * Kinopoisk Music often already has DPAD focus on «Моя волна», but a soft-cursor tap
+     * in empty space steals that focus and the chip looks "dead". Prefer native OK first,
+     * and always also hit the music CTA hotspots — cursor alone often reports success while missing.
+     */
+    private fun activateKinopoisk(): Boolean {
+        var handled = false
+        if (injectKey(KeyEvent.KEYCODE_DPAD_CENTER)) handled = true
+        if (clickFocused() || clickVirtual()) handled = true
+
+        val metrics = screenSize()
+        if (RemoteCursor.visible) {
+            val y = RemoteCursor.pointY
+            // Pointer parked under the chip row / above the shelf is a common miss.
+            val likelyMiss = y > metrics.heightPixels * 0.47f && y < metrics.heightPixels * 0.62f
+            if (!likelyMiss && activateAt(RemoteCursor.pointX, y)) handled = true
+        }
+
+        if (tapMusicPrimaryCtas()) handled = true
+        if (handled) RemoteCursor.hide()
+        return handled
+    }
+
+    private fun tapMusicPrimaryCtas(): Boolean {
+        val metrics = screenSize()
+        // Device-proven activate point for orange «Моя волна»: ~380,450 on 1920x1080.
+        val x = metrics.widthPixels * 0.198f
+        val y = metrics.heightPixels * 0.417f
+        // Prefer shell tap: Kinopoisk Compose often ignores accessibility gestures on chips,
+        // while `input tap` (same as adb) still activates them.
+        if (shellTap(x, y)) {
+            mainHandler.postDelayed({ shellTap(x + 24f, y + 8f) }, 160)
+            return true
+        }
+        val ok = pressAt(x, y)
+        mainHandler.postDelayed({ tapAt(x, y) }, 100)
+        return ok || tapAt(x, y)
+    }
+
+    private fun shellTap(x: Float, y: Float): Boolean {
+        if (shellTapOk == false) return false
+        return try {
+            val process = ProcessBuilder(
+                "/system/bin/input",
+                "tap",
+                x.toInt().toString(),
+                y.toInt().toString(),
+            ).redirectErrorStream(true).start()
+            val err = process.inputStream.bufferedReader().readText().trim()
+            val finished = process.waitFor(700, TimeUnit.MILLISECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                shellTapOk = false
+                return false
+            }
+            if (process.exitValue() != 0) {
+                Log.w(TAG, "input tap exit=${process.exitValue()} err=$err")
+                shellTapOk = false
+                return false
+            }
+            shellTapOk = true
+            true
+        } catch (error: Throwable) {
+            Log.w(TAG, "input tap failed", error)
+            shellTapOk = false
+            false
+        }
+    }
+
+    private fun activateAt(x: Float, y: Float): Boolean {
+        val node = nodeAt(x, y) ?: nearestTarget(x, y, contentOnly = x > navRailRight())
+        if (node != null && activate(node)) return true
+        if (pressAt(x, y)) {
+            mainHandler.postDelayed({ tapAt(x, y) }, 90)
+            return true
+        }
+        return tapAt(x, y)
     }
 
     private fun move(direction: Int): Boolean {
@@ -590,6 +652,10 @@ class RemoteAccessibilityService : AccessibilityService() {
         /** null = unknown, true/false = last shell keyevent result (cached). */
         @Volatile
         private var shellKeysOk: Boolean? = null
+
+        /** Separate cache: tap injection sometimes works when keyevent does not. */
+        @Volatile
+        private var shellTapOk: Boolean? = null
 
         fun press(key: String): Boolean = try {
             instance?.press(key) ?: false
