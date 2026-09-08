@@ -143,6 +143,7 @@ class TvWakeService : Service() {
         when (action) {
             "launch" -> {
                 cancelDinoWake()
+                RemoteCursor.hide()
                 LivingRoomOverlay.hide()
                 if (app == "dino") {
                     requestForeground()
@@ -162,6 +163,7 @@ class TvWakeService : Service() {
                 "play_pause" -> NowPlayingDesk.apply(this, "toggle", null)
                 "home" -> {
                     cancelDinoWake()
+                    RemoteCursor.hide()
                     LivingRoomOverlay.hide()
                     if (!RemoteAccessibilityService.press("home")) {
                         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -173,11 +175,37 @@ class TvWakeService : Service() {
                     if (!RemoteAccessibilityService.connected()) RemoteAccess.ensureEnabled(this)
                     when (key) {
                         "up", "down", "left", "right" -> {
-                            RemoteAccessibilityService.press(key)
-                            // Always keep a software cursor: Kinopoisk Compose ignores a11y DPAD.
-                            nudgeCursor(key)
+                            // Soft pointer only inside Kinopoisk. Everywhere else a random
+                            // crosshair steals the remote and blocks app launches.
+                            if (RemoteAccessibilityService.needsPointer()) {
+                                nudgeCursor(key)
+                            } else {
+                                RemoteCursor.hide()
+                                if (!RemoteAccessibilityService.moveFocus(key)) {
+                                    RemoteAccessibilityService.press(key)
+                                }
+                            }
                         }
-                        else -> RemoteAccessibilityService.press(key)
+                        "ok" -> {
+                            if (RemoteAccessibilityService.needsPointer()) {
+                                if (!RemoteCursor.visible) {
+                                    val metrics = resources.displayMetrics
+                                    RemoteCursor.setPosition(
+                                        this,
+                                        metrics.widthPixels * 0.37f,
+                                        metrics.heightPixels * 0.50f,
+                                    )
+                                }
+                                RemoteAccessibilityService.press("ok")
+                            } else {
+                                RemoteCursor.hide()
+                                RemoteAccessibilityService.press("ok")
+                            }
+                        }
+                        else -> {
+                            RemoteCursor.hide()
+                            RemoteAccessibilityService.press(key)
+                        }
                     }
                 }
             }
@@ -246,17 +274,26 @@ class TvWakeService : Service() {
 
     private fun nudgeCursor(key: String) {
         val metrics = resources.displayMetrics
-        // Smaller steps so music tiles / rows are reachable.
-        val step = minOf(metrics.widthPixels, metrics.heightPixels) * 0.045f
+        val step = minOf(metrics.widthPixels, metrics.heightPixels) * 0.06f
         val (dx, dy) = when (key) {
             "up" -> 0f to -step
             "down" -> 0f to step
             "left" -> -step to 0f
             else -> step to 0f
         }
+        // Keep the pointer in the content pane so snap can't yank it onto the rail.
+        if (!RemoteCursor.visible) {
+            RemoteCursor.setPosition(
+                this,
+                metrics.widthPixels * 0.37f,
+                metrics.heightPixels * 0.50f,
+            )
+        }
         RemoteCursor.move(this, dx, dy)
-        // Stick to the nearest poster / row item under the cursor.
         RemoteAccessibilityService.snapCursor()
+        if (key == "up" || key == "down") {
+            RemoteAccessibilityService.scrollByPad(key)
+        }
     }
 
     private fun cancelDinoWake() {

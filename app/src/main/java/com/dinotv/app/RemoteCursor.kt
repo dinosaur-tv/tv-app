@@ -2,9 +2,10 @@ package com.dinotv.app
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -15,8 +16,8 @@ import android.view.View
 import android.view.WindowManager
 
 /**
- * Software DPAD cursor for apps (Kinopoisk Compose) that ignore accessibility focus.
- * Arrows move the dot; OK taps underneath via [RemoteAccessibilityService].
+ * Fallback pointer when real DPAD injection is unavailable.
+ * Quiet crosshair — not a loud red blob.
  */
 object RemoteCursor {
     private const val TAG = "RemoteCursor"
@@ -36,20 +37,43 @@ object RemoteCursor {
             return
         }
         val app = context.applicationContext
-        // MiTV sometimes reports canDrawOverlays=false while appops already allows it.
-        // Always attempt addView and log the failure.
         val metrics = metrics(app)
         if (!ready) {
-            x = metrics.widthPixels / 2f
-            y = metrics.heightPixels / 2f
+            x = metrics.widthPixels * 0.37f
+            y = metrics.heightPixels * 0.50f
             ready = true
         }
-        val dot = View(app)
-        val size = (metrics.density * 36).toInt().coerceIn(48, 80)
-        dot.background = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.argb(230, 255, 60, 60))
-            setStroke((metrics.density * 3).toInt().coerceAtLeast(3), Color.WHITE)
+        val density = metrics.density
+        val size = (density * 28).toInt().coerceIn(36, 56)
+        val cross = object : View(app) {
+            private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = density * 1.6f
+                color = Color.argb(200, 245, 245, 240)
+            }
+            private val core = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = Color.argb(210, 255, 196, 72)
+            }
+            private val hair = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                strokeWidth = density * 1.2f
+                color = Color.argb(160, 255, 255, 255)
+                strokeCap = Paint.Cap.ROUND
+            }
+
+            override fun onDraw(canvas: Canvas) {
+                val cx = width / 2f
+                val cy = height / 2f
+                val r = width * 0.28f
+                val arm = width * 0.42f
+                canvas.drawLine(cx - arm, cy, cx - r * 0.7f, cy, hair)
+                canvas.drawLine(cx + r * 0.7f, cy, cx + arm, cy, hair)
+                canvas.drawLine(cx, cy - arm, cx, cy - r * 0.7f, hair)
+                canvas.drawLine(cx, cy + r * 0.7f, cx, cy + arm, hair)
+                canvas.drawCircle(cx, cy, r, ring)
+                canvas.drawCircle(cx, cy, density * 2.2f, core)
+            }
         }
         val type = if (Build.VERSION.SDK_INT >= 26) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -77,8 +101,8 @@ object RemoteCursor {
             }
         }
         try {
-            (app.getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(dot, params)
-            view = dot
+            (app.getSystemService(Context.WINDOW_SERVICE) as WindowManager).addView(cross, params)
+            view = cross
             Log.i(TAG, "cursor shown at $x,$y size=$size")
             bumpHide()
         } catch (error: Exception) {
@@ -126,6 +150,7 @@ object RemoteCursor {
         main.removeCallbacks(hideRunnable)
         val dot = view ?: return
         view = null
+        ready = false
         try {
             (dot.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(dot)
         } catch (_: Exception) {
@@ -137,7 +162,7 @@ object RemoteCursor {
 
     private fun bumpHide() {
         main.removeCallbacks(hideRunnable)
-        main.postDelayed(hideRunnable, 8_000)
+        main.postDelayed(hideRunnable, 5_000)
     }
 
     @SuppressLint("Deprecated")
