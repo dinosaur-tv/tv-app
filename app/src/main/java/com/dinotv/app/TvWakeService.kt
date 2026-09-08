@@ -19,6 +19,7 @@ import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.dinotv.app.domain.MusicRemote
 import com.dinotv.app.domain.TvRemote
+import com.dinotv.app.domain.TvRemoteCommand
 import com.dinotv.app.domain.EventReminders
 import android.media.AudioManager
 import com.dinotv.app.domain.IncomingEvent
@@ -33,6 +34,7 @@ import java.util.concurrent.TimeUnit
 class TvWakeService : Service() {
     private val worker = Executors.newSingleThreadScheduledExecutor()
     private val main = Handler(Looper.getMainLooper())
+    private val wakeToken = Any()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -44,14 +46,14 @@ class TvWakeService : Service() {
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
-        worker.scheduleWithFixedDelay({ poll() }, 0, 1, TimeUnit.SECONDS)
+        worker.scheduleWithFixedDelay({ poll() }, 0, 400, TimeUnit.MILLISECONDS)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onDestroy() {
         worker.shutdownNow()
-        main.removeCallbacksAndMessages(null)
+        main.removeCallbacksAndMessages(wakeToken)
         super.onDestroy()
     }
 
@@ -78,6 +80,7 @@ class TvWakeService : Service() {
             if (!TvPower.shouldApply(TvPrefs.powerAt(this), powerAt)) return
             TvPrefs.savePowerAt(this, powerAt)
             if (power != "on") {
+                cancelDinoWake()
                 main.post { LivingRoomOverlay.hide() }
                 return
             }
@@ -94,25 +97,63 @@ class TvWakeService : Service() {
     }
 
     private fun maybeTvCommand(json: JSONObject) {
-        val cmd = json.optJSONObject("tvCommand") ?: return
-        val command = TvRemote.take(
-            cmd.optString("action"),
-            cmd.optString("at"),
-            app = cmd.optString("app").ifBlank { null },
-            key = cmd.optString("key").ifBlank { null },
-        ) ?: return
-        if (command.at == TvPrefs.tvCommandAt(this)) return
-        TvPrefs.saveTvCommandAt(this, command.at)
-        main.post { applyTvCommand(command.action, command.app, command.key) }
+        val lastAt = TvPrefs.tvCommandAt(this)
+        val parsed = mutableListOf<TvRemoteCommand>()
+        val queued = json.optJSONArray("tvCommands")
+        if (queued != null) {
+            for (i in 0 until queued.length()) {
+                val cmd = queued.optJSONObject(i) ?: continue
+                val item = TvRemote.take(
+                    cmd.optString("action"),
+                    cmd.optString("at"),
+                    app = cmd.optString("app").ifBlank { null },
+                    key = cmd.optString("key").ifBlank { null },
+                ) ?: continue
+                if (item.at > lastAt) parsed += item
+            }
+        } else {
+            val cmd = json.optJSONObject("tvCommand") ?: return
+            val item = TvRemote.take(
+                cmd.optString("action"),
+                cmd.optString("at"),
+                app = cmd.optString("app").ifBlank { null },
+                key = cmd.optString("key").ifBlank { null },
+            ) ?: return
+            if (item.at > lastAt) parsed += item
+        }
+        if (parsed.isEmpty()) return
+        val ordered = parsed.sortedBy { it.at }
+        TvPrefs.saveTvCommandAt(this, ordered.last().at)
+        main.post { playTvCommands(ordered, 0) }
+    }
+
+    private fun playTvCommands(commands: List<TvRemoteCommand>, index: Int) {
+        if (index >= commands.size) return
+        val command = commands[index]
+        applyTvCommand(command.action, command.app, command.key)
+        val delay = when {
+            command.action == "launch" -> 450L
+            command.action == "key" -> 80L
+            else -> 0L
+        }
+        main.postDelayed({ playTvCommands(commands, index + 1) }, delay)
     }
 
     private fun applyTvCommand(action: String, app: String?, key: String?) {
         when (action) {
             "launch" -> {
+                cancelDinoWake()
                 LivingRoomOverlay.hide()
+                if (app == "dino") {
+                    requestForeground()
+                    return
+                }
                 val open = app?.let { TvApps.intent(this, it) } ?: return
-                scheduleAlarmClock(open)
+                // Background launches are flaky on Android TV — hit several privileged paths.
                 startLaunchIntent(open)
+                scheduleAlarmClock(open)
+                main.postAtTime({ startLaunchIntent(open) }, wakeToken, SystemClock.uptimeMillis() + 400)
+                main.postAtTime({ startLaunchIntent(open) }, wakeToken, SystemClock.uptimeMillis() + 1_200)
             }
             "key" -> when (key) {
                 "volume_up" -> TvAudio.adjustVolume(this, AudioManager.ADJUST_RAISE)
@@ -120,6 +161,7 @@ class TvWakeService : Service() {
                 "mute" -> TvAudio.toggleMute(this)
                 "play_pause" -> NowPlayingDesk.apply(this, "toggle", null)
                 "home" -> {
+                    cancelDinoWake()
                     LivingRoomOverlay.hide()
                     if (!RemoteAccessibilityService.press("home")) {
                         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -127,7 +169,10 @@ class TvWakeService : Service() {
                         startLaunchIntent(home)
                     }
                 }
-                "back", "up", "down", "left", "right", "ok" -> RemoteAccessibilityService.press(key)
+                "back", "up", "down", "left", "right", "ok" -> {
+                    if (!RemoteAccessibilityService.connected()) RemoteAccess.ensureEnabled(this)
+                    RemoteAccessibilityService.press(key)
+                }
             }
         }
     }
@@ -192,10 +237,14 @@ class TvWakeService : Service() {
         main.post { EventOverlay.show(this, cue) }
     }
 
+    private fun cancelDinoWake() {
+        main.removeCallbacksAndMessages(wakeToken)
+    }
+
     private fun requestForeground() {
-        main.post { bringDinoToFront() }
-        main.postDelayed({ bringDinoToFront() }, 700)
-        main.postDelayed({ bringDinoToFront() }, 1_800)
+        main.postAtTime({ bringDinoToFront() }, wakeToken, SystemClock.uptimeMillis())
+        main.postAtTime({ bringDinoToFront() }, wakeToken, SystemClock.uptimeMillis() + 700)
+        main.postAtTime({ bringDinoToFront() }, wakeToken, SystemClock.uptimeMillis() + 1_800)
     }
 
     private fun bringDinoToFront() {
@@ -240,15 +289,25 @@ class TvWakeService : Service() {
         if (Build.VERSION.SDK_INT >= 34) {
             try {
                 activityPending(requestCodeFor(open, 1), open).send()
-                return
             } catch (_: Exception) {
                 // Try a direct start below.
+            }
+            try {
+                val options = ActivityOptions.makeBasic().apply {
+                    setPendingIntentBackgroundActivityStartMode(
+                        ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED,
+                    )
+                }
+                startActivity(open, options.toBundle())
+                return
+            } catch (_: Exception) {
+                // Fall through.
             }
         }
         try {
             startActivity(open)
         } catch (_: Exception) {
-            // Full-screen notification is the last attempt.
+            // Full-screen notification / alarm clock remain as backups.
         }
     }
 

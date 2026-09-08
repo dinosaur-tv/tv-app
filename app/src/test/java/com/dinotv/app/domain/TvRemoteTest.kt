@@ -23,4 +23,17 @@ class TvRemoteTest {
         assertNull(TvRemote.take("key", "t1", key = "power"))
         assertNull(TvRemote.take("key", "", key = "ok"))
     }
+
+    @Test
+    fun `plays queued keys in order after the last ack`() {
+        val queued = listOf(
+            TvRemote.take("key", "1000.0001", key = "up")!!,
+            TvRemote.take("key", "1000.0002", key = "ok")!!,
+            TvRemote.take("key", "1000.0003", key = "down")!!,
+        )
+        assertEquals(
+            listOf("ok", "down"),
+            TvRemote.after("1000.0001", queued).map { it.key },
+        )
+    }
 }

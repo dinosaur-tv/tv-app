@@ -22,4 +22,7 @@ object TvRemote {
             else -> null
         }
     }
+
+    fun after(lastAt: String, commands: List<TvRemoteCommand>): List<TvRemoteCommand> =
+        commands.filter { it.at > lastAt }.sortedBy { it.at }
 }
