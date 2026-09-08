@@ -35,16 +35,11 @@ class RemoteAccessibilityService : AccessibilityService() {
     }
 
     fun press(key: String): Boolean = try {
+        RemoteCursor.hide()
         when (key) {
-            "back" -> {
-                RemoteCursor.hide()
-                performGlobalAction(GLOBAL_ACTION_BACK) || injectKey(KeyEvent.KEYCODE_BACK)
-            }
-            "home" -> {
-                RemoteCursor.hide()
-                performGlobalAction(GLOBAL_ACTION_HOME) || openHome()
-            }
-            "ok" -> activateCursorOrFocus()
+            "back" -> performGlobalAction(GLOBAL_ACTION_BACK) || injectKey(KeyEvent.KEYCODE_BACK)
+            "home" -> performGlobalAction(GLOBAL_ACTION_HOME) || openHome()
+            "ok" -> activateFocus()
             "up" -> move(View.FOCUS_UP)
             "down" -> move(View.FOCUS_DOWN)
             "left" -> move(View.FOCUS_LEFT)
@@ -55,9 +50,10 @@ class RemoteAccessibilityService : AccessibilityService() {
         false
     }
 
-    /** Focus-only move for apps with a real a11y/DPAD tree. No swipe / tap fallback. */
+    /** Focus move like a real remote. Soft cursor is never used. */
     fun moveFocus(key: String): Boolean {
         return try {
+            RemoteCursor.hide()
             val direction = when (key) {
                 "up" -> View.FOCUS_UP
                 "down" -> View.FOCUS_DOWN
@@ -65,15 +61,13 @@ class RemoteAccessibilityService : AccessibilityService() {
                 "right" -> View.FOCUS_RIGHT
                 else -> return false
             }
-            // Kinopoisk Music is Compose with almost no focusables — pointer mode only.
-            if (isPointerApp()) return false
-            injectKey(directionKey(direction)) || stepFocus(direction) || step(direction, allowTap = false)
+            move(direction)
         } catch (_: Throwable) {
             false
         }
     }
 
-    private fun isPointerApp(): Boolean {
+    private fun isKinopoisk(): Boolean {
         val pkg = try {
             activeRoot()?.packageName?.toString().orEmpty()
         } catch (_: Throwable) {
@@ -82,125 +76,156 @@ class RemoteAccessibilityService : AccessibilityService() {
         return pkg.contains("kinopoisk", ignoreCase = true)
     }
 
-    /**
-     * Snap onto the nearest *content* tile. Never jump back onto the Kinopoisk left rail —
-     * Music Compose has almost no a11y nodes, so the rail was stealing every arrow.
-     */
     fun snapCursor(): Boolean {
-        if (!RemoteCursor.visible) return false
-        // Kinopoisk Music has almost no real tiles in the a11y tree; snapping jumps to
-        // the left rail or random wrappers and breaks navigation.
-        if (isPointerApp()) return false
-        val x = RemoteCursor.pointX
-        val y = RemoteCursor.pointY
-        val target = nearestTarget(x, y, contentOnly = x > navRailRight()) ?: return false
-        val box = Rect().also { target.getBoundsInScreen(it) }
-        if (isNavRail(box) && x > navRailRight()) return false
-        RemoteCursor.setPosition(this, box.centerX().toFloat(), box.centerY().toFloat())
-        virtualFocusBox = Rect(box)
-        target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-        target.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
-        target.performAction(AccessibilityNodeInfo.ACTION_SELECT)
-        return true
+        // Soft cursor mode is retired — keep the API for older callers.
+        RemoteCursor.hide()
+        return false
     }
 
-    private fun activateCursorOrFocus(): Boolean {
-        if (isPointerApp()) {
-            return activateKinopoisk()
-        }
-        if (RemoteCursor.visible) {
-            return activateAt(RemoteCursor.pointX, RemoteCursor.pointY)
-        }
+    private fun activateFocus(): Boolean {
         if (injectKey(KeyEvent.KEYCODE_DPAD_CENTER)) return true
         if (clickFocused() || clickVirtual()) return true
-        return tapCenter()
+        if (isKinopoisk() && activateRailSelection()) return true
+        return false
     }
 
-    /**
-     * Kinopoisk Music often already has DPAD focus on «Моя волна», but a soft-cursor tap
-     * in empty space steals that focus and the chip looks "dead". Prefer native OK first,
-     * and always also hit the music CTA hotspots — cursor alone often reports success while missing.
-     */
-    private fun activateKinopoisk(): Boolean {
-        var handled = false
-        if (injectKey(KeyEvent.KEYCODE_DPAD_CENTER)) handled = true
-        if (clickFocused() || clickVirtual()) handled = true
-
-        val metrics = screenSize()
-        if (RemoteCursor.visible) {
-            val y = RemoteCursor.pointY
-            // Pointer parked under the chip row / above the shelf is a common miss.
-            val likelyMiss = y > metrics.heightPixels * 0.47f && y < metrics.heightPixels * 0.62f
-            if (!likelyMiss && activateAt(RemoteCursor.pointX, y)) handled = true
-        }
-
-        if (tapMusicPrimaryCtas()) handled = true
-        if (handled) RemoteCursor.hide()
-        return handled
-    }
-
-    private fun tapMusicPrimaryCtas(): Boolean {
-        val metrics = screenSize()
-        // Device-proven activate point for orange «Моя волна»: ~380,450 on 1920x1080.
-        val x = metrics.widthPixels * 0.198f
-        val y = metrics.heightPixels * 0.417f
-        // Prefer shell tap: Kinopoisk Compose often ignores accessibility gestures on chips,
-        // while `input tap` (same as adb) still activates them.
-        if (shellTap(x, y)) {
-            mainHandler.postDelayed({ shellTap(x + 24f, y + 8f) }, 160)
-            return true
-        }
-        val ok = pressAt(x, y)
-        mainHandler.postDelayed({ tapAt(x, y) }, 100)
-        return ok || tapAt(x, y)
-    }
-
-    private fun shellTap(x: Float, y: Float): Boolean {
-        if (shellTapOk == false) return false
-        return try {
-            val process = ProcessBuilder(
-                "/system/bin/input",
-                "tap",
-                x.toInt().toString(),
-                y.toInt().toString(),
-            ).redirectErrorStream(true).start()
-            val err = process.inputStream.bufferedReader().readText().trim()
-            val finished = process.waitFor(700, TimeUnit.MILLISECONDS)
-            if (!finished) {
-                process.destroyForcibly()
-                shellTapOk = false
-                return false
-            }
-            if (process.exitValue() != 0) {
-                Log.w(TAG, "input tap exit=${process.exitValue()} err=$err")
-                shellTapOk = false
-                return false
-            }
-            shellTapOk = true
-            true
-        } catch (error: Throwable) {
-            Log.w(TAG, "input tap failed", error)
-            shellTapOk = false
-            false
-        }
-    }
-
-    private fun activateAt(x: Float, y: Float): Boolean {
-        val node = nodeAt(x, y) ?: nearestTarget(x, y, contentOnly = x > navRailRight())
-        if (node != null && activate(node)) return true
-        if (pressAt(x, y)) {
-            mainHandler.postDelayed({ tapAt(x, y) }, 90)
-            return true
-        }
-        return tapAt(x, y)
+    private fun activateRailSelection(): Boolean {
+        val root = activeRoot() ?: return false
+        val focused = focusedNode(root) ?: return false
+        val box = Rect().also { focused.getBoundsInScreen(it) }
+        if (!isNavRail(box)) return false
+        return activate(focused)
     }
 
     private fun move(direction: Int): Boolean {
         if (injectKey(directionKey(direction))) return true
+        // Kinopoisk rail is real Views — walk it like DPAD when key injection is blocked.
+        // No app-specific jumps (LEFT must not teleport to Music).
+        if (isKinopoisk() && moveKinopoiskRail(direction)) return true
         if (stepFocus(direction)) return true
         if (step(direction)) return true
         if (scroll(direction)) return true
         return swipe(direction)
+    }
+
+    /**
+     * Kinopoisk left rail is real Views (`musicButton`, …). Physical remote uses DPAD;
+     * when injection is denied, focus those rail nodes in order.
+     */
+    private fun moveKinopoiskRail(direction: Int): Boolean {
+        val root = activeRoot() ?: return false
+        val rail = railButtons(root)
+        if (rail.isEmpty()) return false
+        val focused = focusedNode(root)
+        val focusedBox = Rect().also { focused?.getBoundsInScreen(it) }
+        val onRail = focused != null && !focusedBox.isEmpty && isNavRail(focusedBox)
+
+        when (direction) {
+            View.FOCUS_LEFT -> {
+                if (onRail) return focusNode(focused!!)
+                val originY = when {
+                    focused != null && !focusedBox.isEmpty -> focusedBox.centerY()
+                    virtualFocusBox != null -> virtualFocusBox!!.centerY()
+                    else -> screenSize().heightPixels / 2
+                }
+                val target = rail.firstOrNull { it.isSelected || it.isFocused || it.isAccessibilityFocused }
+                    ?: rail.minByOrNull { node ->
+                        val box = Rect().also { node.getBoundsInScreen(it) }
+                        kotlin.math.abs(box.centerY() - originY)
+                    } ?: return false
+                val ok = focusNode(target)
+                Log.i(TAG, "rail LEFT -> ${labelOf(target)} ok=$ok")
+                return ok
+            }
+            View.FOCUS_UP, View.FOCUS_DOWN -> {
+                val origin = when {
+                    onRail -> focusedBox
+                    virtualFocusBox != null && isNavRail(virtualFocusBox!!) -> virtualFocusBox!!
+                    else -> return false
+                }
+                val current = if (onRail) focused else {
+                    rail.firstOrNull { node ->
+                        val box = Rect().also { node.getBoundsInScreen(it) }
+                        box.centerY() == origin.centerY() || Rect.intersects(box, origin)
+                    }
+                }
+                val target = rail
+                    .asSequence()
+                    .filter { it !== current }
+                    .map { it to Rect().also { box -> it.getBoundsInScreen(box) } }
+                    .filter { (_, box) -> inDirection(origin, box, direction) }
+                    .minByOrNull { (_, box) -> score(origin, box, direction) }
+                    ?.first
+                    ?: return false
+                val ok = focusNode(target)
+                Log.i(TAG, "rail ${if (direction == View.FOCUS_DOWN) "DOWN" else "UP"} -> ${labelOf(target)} ok=$ok")
+                return ok
+            }
+            View.FOCUS_RIGHT -> {
+                if (!onRail && (virtualFocusBox == null || !isNavRail(virtualFocusBox!!))) return false
+                virtualFocusBox = null
+                return step(direction) || stepFocus(direction)
+            }
+            else -> return false
+        }
+    }
+
+    private fun railButtons(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
+        val metrics = screenSize()
+        val railRight = metrics.widthPixels * 0.20f
+        val seen = LinkedHashMap<String, AccessibilityNodeInfo>()
+        for (node in walk(root)) {
+            if (!node.isVisibleToUser) continue
+            if (!(node.isClickable || node.isFocusable)) continue
+            val box = Rect().also { node.getBoundsInScreen(it) }
+            if (box.isEmpty) continue
+            if (box.centerX() >= railRight) continue
+            if (box.width() >= metrics.widthPixels * 0.40f) continue
+            if (box.height() !in 48..110) continue
+            val id = node.viewIdResourceName.orEmpty()
+            val label = labelOf(node)
+            val named = id.contains("Button", ignoreCase = true) || label.isNotBlank()
+            val leftIcon = id.isBlank() && label.isBlank()
+            if (!named && !leftIcon) continue
+            val key = id.ifBlank { "${box.centerY()}:${box.height()}" }
+            val prev = seen[key]
+            if (prev == null || (labelOf(prev).isBlank() && label.isNotBlank())) {
+                seen[key] = node
+            }
+        }
+        return seen.values.sortedBy { node ->
+            Rect().also { node.getBoundsInScreen(it) }.centerY()
+        }
+    }
+
+    private fun labelOf(node: AccessibilityNodeInfo): String {
+        val self = node.text?.toString()?.trim().orEmpty()
+            .ifBlank { node.contentDescription?.toString()?.trim().orEmpty() }
+        if (self.isNotBlank()) return self
+        val id = node.viewIdResourceName.orEmpty()
+        if (id.isNotBlank()) return id.substringAfterLast('/')
+        val childCount = node.childCount.coerceAtMost(6)
+        for (i in 0 until childCount) {
+            val child = node.getChild(i) ?: continue
+            val text = child.text?.toString()?.trim().orEmpty()
+            if (text.isNotBlank()) return text
+        }
+        return ""
+    }
+
+    private fun isNavRail(box: Rect): Boolean {
+        val metrics = screenSize()
+        return box.centerX() < metrics.widthPixels * 0.22f &&
+            box.width() < metrics.widthPixels * 0.40f
+    }
+
+    private fun focusNode(node: AccessibilityNodeInfo): Boolean {
+        val box = Rect().also { node.getBoundsInScreen(it) }
+        virtualFocusBox = Rect(box)
+        if (node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)) return true
+        if (node.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)) return true
+        if (node.performAction(AccessibilityNodeInfo.ACTION_SELECT)) return true
+        return tapAt(box.centerX().toFloat(), box.centerY().toFloat())
     }
 
     private fun tapCursor(): Boolean {
@@ -208,64 +233,7 @@ class RemoteAccessibilityService : AccessibilityService() {
         return tapAt(RemoteCursor.pointX, RemoteCursor.pointY)
     }
 
-    private fun nodeAt(x: Float, y: Float): AccessibilityNodeInfo? {
-        val root = activeRoot() ?: return null
-        val px = x.toInt()
-        val py = y.toInt()
-        var best: AccessibilityNodeInfo? = null
-        var bestArea = Int.MAX_VALUE
-        for (node in walk(root)) {
-            if (!node.isVisibleToUser || node.isEditable) continue
-            val className = node.className?.toString().orEmpty()
-            if (className.contains("EditText", ignoreCase = true)) continue
-            val box = Rect().also { node.getBoundsInScreen(it) }
-            if (!box.contains(px, py)) continue
-            if (!(node.isClickable || node.isFocusable || node.isSelected)) continue
-            val area = box.width() * box.height()
-            // Prefer real tiles over giant wrappers and over tiny icons.
-            if (area < 4_000 || area > 900_000) continue
-            if (area < bestArea) {
-                best = node
-                bestArea = area
-            }
-        }
-        return best
-    }
-
-    private fun nearestTarget(
-        x: Float,
-        y: Float,
-        contentOnly: Boolean = false,
-    ): AccessibilityNodeInfo? {
-        val root = activeRoot() ?: return null
-        val metrics = screenSize()
-        val maxDist = minOf(metrics.widthPixels, metrics.heightPixels) * 0.18f
-        var best: AccessibilityNodeInfo? = null
-        var bestScore = Float.MAX_VALUE
-        for (node in focusCandidates(root)) {
-            val box = Rect().also { node.getBoundsInScreen(it) }
-            if (contentOnly && isNavRail(box)) continue
-            val cx = box.centerX().toFloat()
-            val cy = box.centerY().toFloat()
-            val dist = kotlin.math.hypot((cx - x).toDouble(), (cy - y).toDouble()).toFloat()
-            if (dist > maxDist) continue
-            // Prefer smaller tiles so posters win over giant containers.
-            val score = dist + (box.width() + box.height()) * 0.02f
-            if (score < bestScore) {
-                best = node
-                bestScore = score
-            }
-        }
-        return best
-    }
-
-    private fun navRailRight(): Float = screenSize().widthPixels * 0.14f
-
-    private fun isNavRail(box: Rect): Boolean {
-        val metrics = screenSize()
-        return box.centerX() < metrics.widthPixels * 0.16f &&
-            box.width() < metrics.widthPixels * 0.28f
-    }
+    private fun navRailRight(): Float = screenSize().widthPixels * 0.18f
 
     private fun pressAt(x: Float, y: Float): Boolean = try {
         val path = Path().apply { moveTo(x, y) }
@@ -389,14 +357,14 @@ class RemoteAccessibilityService : AccessibilityService() {
         val cy = if (RemoteCursor.visible) RemoteCursor.pointY else metrics.heightPixels * 0.5f
         // Longer vertical flick so Kinopoisk Music rows actually advance.
         val distance = minOf(metrics.widthPixels, metrics.heightPixels) *
-            if (isPointerApp()) 0.38f else 0.28f
+            if (isKinopoisk()) 0.38f else 0.28f
         val (x1, y1, x2, y2) = when (direction) {
             View.FOCUS_RIGHT -> floatArrayOf(cx + distance * 0.5f, cy, cx - distance * 0.5f, cy)
             View.FOCUS_LEFT -> floatArrayOf(cx - distance * 0.5f, cy, cx + distance * 0.5f, cy)
             View.FOCUS_DOWN -> floatArrayOf(cx, cy + distance * 0.25f, cx, cy - distance * 0.7f)
             else -> floatArrayOf(cx, cy - distance * 0.25f, cx, cy + distance * 0.7f)
         }
-        return swipeFrom(x1, y1, x2, y2, if (isPointerApp()) 220 else 140)
+        return swipeFrom(x1, y1, x2, y2, if (isKinopoisk()) 220 else 140)
     }
 
     private fun openHome(): Boolean {
@@ -641,7 +609,7 @@ class RemoteAccessibilityService : AccessibilityService() {
     }
 
     companion object {
-        private const val MAX_NODES = 220
+        private const val MAX_NODES = 400
 
         @Volatile
         private var instance: RemoteAccessibilityService? = null
@@ -652,10 +620,6 @@ class RemoteAccessibilityService : AccessibilityService() {
         /** null = unknown, true/false = last shell keyevent result (cached). */
         @Volatile
         private var shellKeysOk: Boolean? = null
-
-        /** Separate cache: tap injection sometimes works when keyevent does not. */
-        @Volatile
-        private var shellTapOk: Boolean? = null
 
         fun press(key: String): Boolean = try {
             instance?.press(key) ?: false
@@ -669,11 +633,8 @@ class RemoteAccessibilityService : AccessibilityService() {
             false
         }
 
-        fun needsPointer(): Boolean = try {
-            instance?.isPointerApp() ?: false
-        } catch (_: Throwable) {
-            false
-        }
+        /** Soft cursor is retired; kept so older callers compile. */
+        fun needsPointer(): Boolean = false
 
         fun snapCursor(): Boolean = try {
             instance?.snapCursor() ?: false
@@ -688,5 +649,23 @@ class RemoteAccessibilityService : AccessibilityService() {
         }
 
         fun connected(): Boolean = instance != null
+
+        fun debugRail(): String = try {
+            instance?.debugRailState() ?: "a11y offline"
+        } catch (error: Throwable) {
+            "rail error: ${error.message}"
+        }
+    }
+
+    fun debugRailState(): String {
+        val root = activeRoot() ?: return "no root"
+        val focused = focusedNode(root)
+        val rail = railButtons(root)
+        val focusId = focused?.let { labelOf(it).ifBlank { it.viewIdResourceName ?: "node" } } ?: "none"
+        val railIds = rail.joinToString { node ->
+            val box = Rect().also { node.getBoundsInScreen(it) }
+            "${labelOf(node).ifBlank { "row" }}@${box.centerY()}f=${node.isFocused}/${node.isAccessibilityFocused}"
+        }
+        return "pkg=${root.packageName} focus=$focusId virtual=$virtualFocusBox rail=[$railIds]"
     }
 }

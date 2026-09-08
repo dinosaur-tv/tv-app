@@ -174,34 +174,10 @@ class TvWakeService : Service() {
                 }
                 "back", "up", "down", "left", "right", "ok" -> {
                     if (!RemoteAccessibilityService.connected()) RemoteAccess.ensureEnabled(this)
-                    when (key) {
-                        "up", "down", "left", "right" -> {
-                            // Soft pointer only inside Kinopoisk. Everywhere else a random
-                            // crosshair steals the remote and blocks app launches.
-                            if (RemoteAccessibilityService.needsPointer()) {
-                                nudgeCursor(key)
-                            } else {
-                                RemoteCursor.hide()
-                                if (!RemoteAccessibilityService.moveFocus(key)) {
-                                    RemoteAccessibilityService.press(key)
-                                }
-                            }
-                        }
-                        "ok" -> {
-                            if (RemoteAccessibilityService.needsPointer()) {
-                                // Keep cursor coords for aimed tiles, but activation prefers
-                                // native focus + music CTA hotspots over a stray pointer miss.
-                                RemoteAccessibilityService.press("ok")
-                            } else {
-                                RemoteCursor.hide()
-                                RemoteAccessibilityService.press("ok")
-                            }
-                        }
-                        else -> {
-                            RemoteCursor.hide()
-                            RemoteAccessibilityService.press(key)
-                        }
-                    }
+                    RemoteCursor.hide()
+                    // Exactly one incoming command becomes exactly one remote action.
+                    // Retrying through both moveFocus() and press() could advance twice.
+                    RemoteAccessibilityService.press(key)
                 }
             }
         }
@@ -265,30 +241,6 @@ class TvWakeService : Service() {
         if (TvForeground.visible) return
         if (!TvPrefs.markCueShown(this, cue.id)) return
         main.post { EventOverlay.show(this, cue) }
-    }
-
-    private fun nudgeCursor(key: String) {
-        val metrics = resources.displayMetrics
-        val step = minOf(metrics.widthPixels, metrics.heightPixels) * 0.06f
-        val (dx, dy) = when (key) {
-            "up" -> 0f to -step
-            "down" -> 0f to step
-            "left" -> -step to 0f
-            else -> step to 0f
-        }
-        // Keep the pointer in the content pane so snap can't yank it onto the rail.
-        if (!RemoteCursor.visible) {
-            RemoteCursor.setPosition(
-                this,
-                metrics.widthPixels * 0.37f,
-                metrics.heightPixels * 0.50f,
-            )
-        }
-        RemoteCursor.move(this, dx, dy)
-        RemoteAccessibilityService.snapCursor()
-        if (key == "up" || key == "down") {
-            RemoteAccessibilityService.scrollByPad(key)
-        }
     }
 
     private fun cancelDinoWake() {
