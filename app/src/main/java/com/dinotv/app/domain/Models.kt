@@ -11,6 +11,8 @@ enum class DisplayTheme(val id: String, val label: String) {
     GALLERY("gallery", "Галерея"),
     HOME_DAY("home-day", "Дом · День"),
     HOME_EVENING("home-evening", "Дом · Вечер"),
+    PALACE("palace", "Дворец"),
+    OAK_STUDY("oak-study", "Дубовый кабинет"),
     NIGHT("night", "Ночь"),
     PLAY("play", "Шалость"),
     FOREST("forest", "Лес"),

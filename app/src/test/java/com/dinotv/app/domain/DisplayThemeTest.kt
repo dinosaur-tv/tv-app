@@ -10,6 +10,8 @@ class DisplayThemeTest {
         assertEquals(DisplayTheme.GALLERY, DisplayTheme.fromId("gallery"))
         assertEquals(DisplayTheme.HOME_DAY, DisplayTheme.fromId("home-day"))
         assertEquals(DisplayTheme.HOME_EVENING, DisplayTheme.fromId("home-evening"))
+        assertEquals(DisplayTheme.PALACE, DisplayTheme.fromId("palace"))
+        assertEquals(DisplayTheme.OAK_STUDY, DisplayTheme.fromId("oak-study"))
         assertEquals(DisplayTheme.NIGHT, DisplayTheme.fromId("night"))
         assertEquals(DisplayTheme.PLAY, DisplayTheme.fromId("play"))
         assertEquals(DisplayTheme.FOREST, DisplayTheme.fromId("forest"))
