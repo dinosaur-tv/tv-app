@@ -59,6 +59,7 @@ class TvWakeService : Service() {
         val session = TvPrefs.session(this)
         if (session.isBlank()) return
         try {
+            RemoteAccess.ensureEnabled(this)
             reportNowPlaying()
             val connection = URL(SNAPSHOT_URL).openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
@@ -109,7 +110,9 @@ class TvWakeService : Service() {
         when (action) {
             "launch" -> {
                 LivingRoomOverlay.hide()
-                if (app != null) TvApps.open(this, app)
+                val open = app?.let { TvApps.intent(this, it) } ?: return
+                scheduleAlarmClock(open)
+                startLaunchIntent(open)
             }
             "key" -> when (key) {
                 "volume_up" -> TvAudio.adjustVolume(this, AudioManager.ADJUST_RAISE)
@@ -120,7 +123,8 @@ class TvWakeService : Service() {
                     LivingRoomOverlay.hide()
                     if (!RemoteAccessibilityService.press("home")) {
                         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(home)
+                        scheduleAlarmClock(home)
+                        startLaunchIntent(home)
                     }
                 }
                 "back", "up", "down", "left", "right", "ok" -> RemoteAccessibilityService.press(key)
@@ -214,7 +218,7 @@ class TvWakeService : Service() {
 
     private fun scheduleAlarmClock(open: Intent) {
         val alarm = getSystemService(AlarmManager::class.java) ?: return
-        val pending = activityPending(3, open)
+        val pending = activityPending(requestCodeFor(open, 3), open)
         val at = System.currentTimeMillis() + 250
         try {
             alarm.setAlarmClock(AlarmManager.AlarmClockInfo(at, pending), pending)
@@ -234,7 +238,7 @@ class TvWakeService : Service() {
     private fun startLaunchIntent(open: Intent) {
         if (Build.VERSION.SDK_INT >= 34) {
             try {
-                activityPending(1, open).send()
+                activityPending(requestCodeFor(open, 1), open).send()
                 return
             } catch (_: Exception) {
                 // Try a direct start below.
@@ -245,6 +249,11 @@ class TvWakeService : Service() {
         } catch (_: Exception) {
             // Full-screen notification is the last attempt.
         }
+    }
+
+    private fun requestCodeFor(open: Intent, salt: Int): Int {
+        val seed = open.component?.flattenToShortString() ?: open.`package` ?: open.action ?: "dino"
+        return 1_000 + salt * 31 + (seed.hashCode() and 0x0fff)
     }
 
     private fun activityPending(requestCode: Int, open: Intent): PendingIntent {
