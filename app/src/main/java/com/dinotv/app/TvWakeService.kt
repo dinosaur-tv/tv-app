@@ -171,7 +171,14 @@ class TvWakeService : Service() {
                 }
                 "back", "up", "down", "left", "right", "ok" -> {
                     if (!RemoteAccessibilityService.connected()) RemoteAccess.ensureEnabled(this)
-                    RemoteAccessibilityService.press(key)
+                    when (key) {
+                        "up", "down", "left", "right" -> {
+                            RemoteAccessibilityService.press(key)
+                            // Always keep a software cursor: Kinopoisk Compose ignores a11y DPAD.
+                            nudgeCursor(key)
+                        }
+                        else -> RemoteAccessibilityService.press(key)
+                    }
                 }
             }
         }
@@ -235,6 +242,18 @@ class TvWakeService : Service() {
         if (TvForeground.visible) return
         if (!TvPrefs.markCueShown(this, cue.id)) return
         main.post { EventOverlay.show(this, cue) }
+    }
+
+    private fun nudgeCursor(key: String) {
+        val metrics = resources.displayMetrics
+        val step = minOf(metrics.widthPixels, metrics.heightPixels) * 0.09f
+        val (dx, dy) = when (key) {
+            "up" -> 0f to -step
+            "down" -> 0f to step
+            "left" -> -step to 0f
+            else -> step to 0f
+        }
+        RemoteCursor.move(this, dx, dy)
     }
 
     private fun cancelDinoWake() {
