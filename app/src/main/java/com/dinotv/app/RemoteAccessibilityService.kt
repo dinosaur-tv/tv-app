@@ -21,11 +21,22 @@ import java.util.concurrent.TimeUnit
 
 class RemoteAccessibilityService : AccessibilityService() {
     private val TAG = "RemoteA11y"
+    @Volatile
+    private var lastWindowClass = ""
+
     override fun onServiceConnected() {
+        virtualFocusBox = null
         instance = this
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            lastWindowClass = event.className?.toString().orEmpty()
+            // A remembered rectangle belongs to the previous screen. Keeping it after
+            // Back/launch makes the next OK land on a seemingly random control.
+            virtualFocusBox = null
+        }
+    }
 
     override fun onInterrupt() = Unit
 
@@ -36,18 +47,39 @@ class RemoteAccessibilityService : AccessibilityService() {
 
     fun press(key: String): Boolean = try {
         RemoteCursor.hide()
-        when (key) {
-            "back" -> performGlobalAction(GLOBAL_ACTION_BACK) || injectKey(KeyEvent.KEYCODE_BACK)
-            "home" -> performGlobalAction(GLOBAL_ACTION_HOME) || openHome()
-            "ok" -> activateFocus()
-            "up" -> move(View.FOCUS_UP)
-            "down" -> move(View.FOCUS_DOWN)
-            "left" -> move(View.FOCUS_LEFT)
-            "right" -> move(View.FOCUS_RIGHT)
-            else -> false
+        if (dismissScreensaver()) {
+            true
+        } else {
+            when (key) {
+                "back" -> performGlobalAction(GLOBAL_ACTION_BACK) || injectKey(KeyEvent.KEYCODE_BACK)
+                "home" -> performGlobalAction(GLOBAL_ACTION_HOME) || openHome()
+                "ok" -> activateFocus()
+                "up" -> move(View.FOCUS_UP)
+                "down" -> move(View.FOCUS_DOWN)
+                "left" -> move(View.FOCUS_LEFT)
+                "right" -> move(View.FOCUS_RIGHT)
+                else -> false
+            }
         }
     } catch (_: Throwable) {
         false
+    }
+
+    private fun dismissScreensaver(): Boolean {
+        val root = activeRoot()
+        val explicit = lastWindowClass.contains("ScreensaverActivity", ignoreCase = true)
+        val knownKinopoiskCard = root != null &&
+            root.packageName?.toString().orEmpty().contains("kinopoisk", ignoreCase = true) &&
+            walk(root).any { node ->
+                node.text?.toString()?.contains("Уже на Кинопоиске", ignoreCase = true) == true
+            }
+        if (!explicit && !knownKinopoiskCard) return false
+        // Match a physical TV remote: the first key wakes the app and does not leak
+        // through to whatever control happened to sit underneath the screensaver.
+        lastWindowClass = ""
+        val handled = performGlobalAction(GLOBAL_ACTION_BACK)
+        Log.i(TAG, "dismiss screensaver handled=$handled")
+        return handled
     }
 
     /** Focus move like a real remote. Soft cursor is never used. */
@@ -83,10 +115,54 @@ class RemoteAccessibilityService : AccessibilityService() {
     }
 
     private fun activateFocus(): Boolean {
+        val root = activeRoot()
+        if (root != null && isKinopoiskPlayer(root)) {
+            // The full-screen Yandex Music player consumes physical DPAD_CENTER as
+            // play/pause, but exposes only a non-clickable Compose wrapper to a11y.
+            // Its MediaSession is the closest exact equivalent available to a
+            // non-privileged TV app.
+            NowPlayingDesk.apply(this, "toggle", null)
+            Log.i(TAG, "OK -> Kinopoisk player media toggle")
+            return true
+        }
+        if (root != null && isKinopoiskMusicHome(root) && hasFullContentFocus(root)) {
+            // Kinopoisk hides the selected Compose chip from the accessibility tree.
+            // On the Music landing page DPAD focus starts on the primary «Моя волна»
+            // chip, so press that same stable position instead of the giant wrapper.
+            val metrics = screenSize()
+            val handled = pressAt(
+                metrics.widthPixels * KINOPOISK_MY_WAVE_X,
+                metrics.heightPixels * KINOPOISK_MY_WAVE_Y,
+            )
+            Log.i(TAG, "OK -> Kinopoisk My Wave CTA handled=$handled")
+            return handled
+        }
         if (injectKey(KeyEvent.KEYCODE_DPAD_CENTER)) return true
         if (clickFocused() || clickVirtual()) return true
         if (isKinopoisk() && activateRailSelection()) return true
         return false
+    }
+
+    private fun isKinopoiskPlayer(root: AccessibilityNodeInfo): Boolean {
+        if (!root.packageName?.toString().orEmpty().contains("kinopoisk", ignoreCase = true)) return false
+        return walk(root).any { node ->
+            node.text?.toString()?.trim()?.equals("Сейчас играет", ignoreCase = true) == true
+        }
+    }
+
+    private fun isKinopoiskMusicHome(root: AccessibilityNodeInfo): Boolean {
+        if (!root.packageName?.toString().orEmpty().contains("kinopoisk", ignoreCase = true)) return false
+        return walk(root).any { node ->
+            node.isSelected && node.viewIdResourceName.orEmpty().endsWith("/musicButton")
+        }
+    }
+
+    private fun hasFullContentFocus(root: AccessibilityNodeInfo): Boolean {
+        val focused = focusedNode(root) ?: return false
+        val box = Rect().also { focused.getBoundsInScreen(it) }
+        val metrics = screenSize()
+        return box.width() >= metrics.widthPixels * 0.70f &&
+            box.height() >= metrics.heightPixels * 0.80f
     }
 
     private fun activateRailSelection(): Boolean {
@@ -391,10 +467,20 @@ class RemoteAccessibilityService : AccessibilityService() {
             ?: selectedNode(root)
 
     private fun selectedNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        for (node in walk(root)) {
-            if ((node.isSelected || node.isAccessibilityFocused) && node.isVisibleToUser) return node
+        val selected = walk(root).filter { node ->
+            (node.isSelected || node.isAccessibilityFocused) && node.isVisibleToUser
         }
-        return null
+        // Kinopoisk marks the full-screen docks and the actual rail button as
+        // selected at the same time. Returning the first dock makes LEFT/DOWN use
+        // the centre of the whole screen and jump to an unrelated item.
+        return selected
+            .asSequence()
+            .filter { it.isClickable || it.isFocusable }
+            .map { node -> node to Rect().also { node.getBoundsInScreen(it) } }
+            .filter { (_, box) -> !box.isEmpty }
+            .minByOrNull { (_, box) -> box.width().toLong() * box.height().toLong() }
+            ?.first
+            ?: selected.firstOrNull()
     }
 
     private fun clickFocused(): Boolean {
@@ -610,6 +696,8 @@ class RemoteAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val MAX_NODES = 400
+        private const val KINOPOISK_MY_WAVE_X = 0.19f
+        private const val KINOPOISK_MY_WAVE_Y = 0.633f
 
         @Volatile
         private var instance: RemoteAccessibilityService? = null

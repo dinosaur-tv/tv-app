@@ -11,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
+    private var screen: WebView? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 27) {
@@ -21,9 +23,10 @@ class MainActivity : ComponentActivity() {
         askOverlayPermission()
         askNotificationAccess()
         startWakeService()
-        val screen = WebView(this)
-        TvScreen.bind(screen, DinoTvBridge(this) { moveTaskToBack(true) }, TvPrefs.session(this))
-        setContentView(screen)
+        screen = WebView(this).also { webView ->
+            TvScreen.bind(webView, DinoTvBridge(this) { moveTaskToBack(true) }, TvPrefs.session(this))
+            setContentView(webView)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -42,6 +45,19 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         if (!LivingRoomOverlay.visible) TvForeground.visible = false
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        screen?.apply {
+            stopLoading()
+            removeJavascriptInterface("DinoTV")
+            loadUrl("about:blank")
+            clearHistory()
+            removeAllViews()
+            destroy()
+        }
+        screen = null
+        super.onDestroy()
     }
 
     fun startWakeService() {
