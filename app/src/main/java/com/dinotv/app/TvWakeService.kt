@@ -23,6 +23,7 @@ import com.dinotv.app.domain.TvRemoteCommand
 import com.dinotv.app.domain.EventReminders
 import android.media.AudioManager
 import com.dinotv.app.domain.IncomingEvent
+import com.dinotv.app.domain.NowPlayingTrack
 import com.dinotv.app.domain.TvPower
 import com.dinotv.app.domain.TvWakePolicy
 import org.json.JSONObject
@@ -35,6 +36,11 @@ class TvWakeService : Service() {
     private val worker = Executors.newSingleThreadScheduledExecutor()
     private val main = Handler(Looper.getMainLooper())
     private val wakeToken = Any()
+    private var latestTrack: NowPlayingTrack? = null
+    private var lastMediaCheckAt = 0L
+    private var lastNowPlayingPayload = ""
+    private var lastNowPlayingPostAt = 0L
+    @Volatile private var stopped = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -42,55 +48,79 @@ class TvWakeService : Service() {
         super.onCreate()
         val notification = notification()
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
         worker.scheduleWithFixedDelay({ poll() }, 0, 400, TimeUnit.MILLISECONDS)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        return START_STICKY
+    }
 
     override fun onDestroy() {
+        stopped = true
         worker.shutdownNow()
-        main.removeCallbacksAndMessages(wakeToken)
+        // This Handler belongs only to the service; remove command-chain callbacks
+        // as well as wake callbacks so a dead service cannot be retained.
+        main.removeCallbacksAndMessages(null)
+        RemoteCursor.hide()
+        EventOverlay.hide()
+        LivingRoomOverlay.hide()
         super.onDestroy()
     }
 
     private fun poll() {
+        if (stopped) return
         val session = TvPrefs.session(this)
         if (session.isBlank()) return
         try {
-            RemoteAccess.ensureEnabled(this)
             NotificationAccess.ensureEnabled(this)
-            reportNowPlaying()
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastMediaCheckAt >= MEDIA_CHECK_MS) {
+                latestTrack = NowPlayingDesk.current(this)
+                lastMediaCheckAt = now
+                reportNowPlaying(latestTrack, now)
+            }
             val connection = URL(SNAPSHOT_URL).openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Authorization", "Bearer $session")
-            connection.setRequestProperty("X-Dino-Visible", if (TvForeground.visible) "1" else "0")
-            connection.connectTimeout = 4_000
-            connection.readTimeout = 4_000
-            val body = connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
+            val body = try {
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("Authorization", "Bearer $session")
+                connection.setRequestProperty("X-Dino-Visible", if (TvForeground.visible) "1" else "0")
+                connection.connectTimeout = 4_000
+                connection.readTimeout = 4_000
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                connection.disconnect()
+            }
+            if (stopped) return
             val json = JSONObject(body)
+            val remoteEnabled = json.optJSONObject("features")?.optBoolean("tvRemote", false) == true
+            TvPrefs.saveRemoteEnabled(this, remoteEnabled)
+            if (remoteEnabled) RemoteAccess.ensureEnabled(this)
             maybeCue(json)
             maybeMusicCommand(json)
-            maybeTvCommand(json)
+            if (remoteEnabled) maybeTvCommand(json)
             val power = json.optString("power", "on")
             val powerAt = json.optString("powerAt", "")
             if (!TvPower.shouldApply(TvPrefs.powerAt(this), powerAt)) return
             TvPrefs.savePowerAt(this, powerAt)
             if (power != "on") {
                 cancelDinoWake()
-                main.post { LivingRoomOverlay.hide() }
+                onMain { LivingRoomOverlay.hide() }
                 return
             }
-            val track = NowPlayingDesk.current(this)
+            val track = latestTrack
             if (TvWakePolicy.keepHostPlaying(TvAudio.isPlaying(this), Settings.canDrawOverlays(this), track != null)) {
-                main.post { LivingRoomOverlay.show(this) }
+                onMain { LivingRoomOverlay.show(this) }
                 return
             }
-            main.post { LivingRoomOverlay.hide() }
+            onMain { LivingRoomOverlay.hide() }
             requestForeground()
         } catch (_: Exception) {
             // The remote can retry; a quiet miss is better than crashing the watchman.
@@ -125,11 +155,11 @@ class TvWakeService : Service() {
         if (parsed.isEmpty()) return
         val ordered = parsed.sortedBy { it.at }
         TvPrefs.saveTvCommandAt(this, ordered.last().at)
-        main.post { playTvCommands(ordered, 0) }
+        onMain { playTvCommands(ordered, 0) }
     }
 
     private fun playTvCommands(commands: List<TvRemoteCommand>, index: Int) {
-        if (index >= commands.size) return
+        if (stopped || index >= commands.size) return
         val command = commands[index]
         applyTvCommand(command.action, command.app, command.key)
         val delay = when {
@@ -141,6 +171,7 @@ class TvWakeService : Service() {
     }
 
     private fun applyTvCommand(action: String, app: String?, key: String?) {
+        if (!TvPrefs.remoteEnabled(this)) return
         when (action) {
             "launch" -> {
                 cancelDinoWake()
@@ -187,26 +218,41 @@ class TvWakeService : Service() {
         val cmd = json.optJSONObject("musicCommand") ?: return
         val volume = if (cmd.has("volume") && !cmd.isNull("volume")) cmd.optInt("volume") else null
         val command = MusicRemote.take(cmd.optString("action"), cmd.optString("at"), volume) ?: return
-        if (command.at == TvPrefs.musicCommandAt(this)) return
+        if (command.at <= TvPrefs.musicCommandAt(this)) return
         TvPrefs.saveMusicCommandAt(this, command.at)
-        main.post { NowPlayingDesk.apply(this, command.action, command.volume) }
+        onMain { NowPlayingDesk.apply(this, command.action, command.volume) }
     }
 
-    private fun reportNowPlaying() {
+    private fun reportNowPlaying(track: NowPlayingTrack?, now: Long) {
         val session = TvPrefs.session(this)
         if (session.isBlank()) return
         try {
-            val payload = NowPlayingDesk.reportJson(this)
+            val musicNotifs = NowPlayingListener.activeNotifications()
+                ?.filter { NowPlayingListener.isMusicPackage(it.packageName) }
+            // Empty {"title":""} clears the phone desk — only report a clear when we
+            // can see there is no music notification and audio is idle.
+            val payload = when {
+                track != null -> track.toReportJson()
+                musicNotifs != null && musicNotifs.isEmpty() && !TvAudio.isPlaying(this) ->
+                    """{"title":""}"""
+                else -> return
+            }
+            if (payload == lastNowPlayingPayload && now - lastNowPlayingPostAt < MEDIA_HEARTBEAT_MS) return
             val connection = URL(NOW_PLAYING_URL).openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Authorization", "Bearer $session")
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.connectTimeout = 4_000
-            connection.readTimeout = 4_000
-            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-            connection.inputStream.bufferedReader().use { it.readText() }
-            connection.disconnect()
+            try {
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.setRequestProperty("Authorization", "Bearer $session")
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.connectTimeout = 4_000
+                connection.readTimeout = 4_000
+                connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+                connection.inputStream.bufferedReader().use { it.readText() }
+            } finally {
+                connection.disconnect()
+            }
+            lastNowPlayingPayload = payload
+            lastNowPlayingPostAt = now
         } catch (_: Exception) {
             // The remote can wait for the next beat.
         }
@@ -240,7 +286,11 @@ class TvWakeService : Service() {
         // While Dino itself is on screen the WebView card handles the cue.
         if (TvForeground.visible) return
         if (!TvPrefs.markCueShown(this, cue.id)) return
-        main.post { EventOverlay.show(this, cue) }
+        onMain { EventOverlay.show(this, cue) }
+    }
+
+    private fun onMain(action: () -> Unit) {
+        main.post { if (!stopped) action() }
     }
 
     private fun cancelDinoWake() {
@@ -254,6 +304,7 @@ class TvWakeService : Service() {
     }
 
     private fun bringDinoToFront() {
+        if (stopped) return
         val open = TvLaunch.intent(this)
         moveOwnTasksToFront()
         scheduleAlarmClock(open)
@@ -362,18 +413,25 @@ class TvWakeService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_dino)
             .setContentTitle("Dino TV")
-            .setContentText("Слушает пульт")
+            .setContentText("Связь с домашней консолью")
+            .addAction(0, "Остановить", PendingIntent.getService(
+                this, 9, Intent(this, TvWakeService::class.java).setAction(ACTION_STOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ))
             .setOngoing(true)
             .setSilent(true)
             .build()
     }
 
     companion object {
+        private const val ACTION_STOP = "com.dinotv.app.STOP_MONITORING"
         private const val CHANNEL_ID = "dino_tv_wake"
         private const val WAKE_CHANNEL_ID = "dino_tv_open"
         private const val NOTIFICATION_ID = 7
         private const val WAKE_NOTIFICATION_ID = 8
-        private const val SNAPSHOT_URL = "https://api.dym-dino.ru/v1/display/snapshot"
-        private const val NOW_PLAYING_URL = "https://api.dym-dino.ru/v1/display/now-playing"
+        private const val MEDIA_CHECK_MS = 2_000L
+        private const val MEDIA_HEARTBEAT_MS = 15_000L
+        private const val SNAPSHOT_URL = BuildConfig.API_BASE_URL + "/v1/display/snapshot"
+        private const val NOW_PLAYING_URL = BuildConfig.API_BASE_URL + "/v1/display/now-playing"
     }
 }

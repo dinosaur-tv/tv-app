@@ -3,6 +3,11 @@ package com.dinotv.app
 import android.content.Context
 
 object TvPrefs {
+    fun remoteEnabled(context: Context): Boolean = prefs(context).getBoolean("remoteEnabled", false)
+
+    fun saveRemoteEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean("remoteEnabled", enabled).apply()
+    }
     private const val PREFS = "dino_tv"
     private const val SESSION = "session"
     private const val POWER_AT = "powerAt"

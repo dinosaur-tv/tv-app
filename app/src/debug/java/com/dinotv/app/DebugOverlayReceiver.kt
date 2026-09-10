@@ -9,6 +9,15 @@ class DebugOverlayReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         ContextCompat.startForegroundService(context, Intent(context, TvWakeService::class.java))
         when {
+            intent.getBooleanExtra("eventCue", false) -> {
+                EventOverlay.show(context, com.dinotv.app.domain.EventCue(
+                    id = "debug-reminder-${android.os.SystemClock.uptimeMillis()}",
+                    title = "Проверка уведомления",
+                    owner = "Dino TV",
+                    start = java.time.OffsetDateTime.now().plusMinutes(5).toString(),
+                    minutes = 5,
+                ))
+            }
             intent.hasExtra("launch") -> {
                 RemoteCursor.hide()
                 val app = intent.getStringExtra("launch").orEmpty()
@@ -22,67 +31,40 @@ class DebugOverlayReceiver : BroadcastReceiver() {
             }
             intent.hasExtra("key") -> {
                 val key = intent.getStringExtra("key").orEmpty()
+                RemoteCursor.hide()
                 when (key) {
                     "up", "down", "left", "right" -> {
-                        if (RemoteAccessibilityService.needsPointer()) {
-                            if (!RemoteCursor.visible) {
-                                val metrics = context.resources.displayMetrics
-                                RemoteCursor.setPosition(
-                                    context,
-                                    metrics.widthPixels * 0.37f,
-                                    metrics.heightPixels * 0.50f,
-                                )
-                            }
-                            val step = minOf(
-                                context.resources.displayMetrics.widthPixels,
-                                context.resources.displayMetrics.heightPixels,
-                            ) * 0.06f
-                            RemoteCursor.move(
-                                context,
-                                when (key) {
-                                    "left" -> -step
-                                    "right" -> step
-                                    else -> 0f
-                                },
-                                when (key) {
-                                    "up" -> -step
-                                    "down" -> step
-                                    else -> 0f
-                                },
-                            )
-                            RemoteAccessibilityService.snapCursor()
-                            if (key == "up" || key == "down") {
-                                RemoteAccessibilityService.scrollByPad(key)
-                            }
-                        } else {
-                            RemoteCursor.hide()
-                            if (!RemoteAccessibilityService.moveFocus(key)) {
-                                RemoteAccessibilityService.press(key)
-                            }
-                        }
-                        android.util.Log.i(
-                            "DebugPad",
-                            "key=$key pointer=${RemoteAccessibilityService.needsPointer()} cursor=${RemoteCursor.visible}",
-                        )
-                    }
-                    "ok" -> {
-                        if (!RemoteAccessibilityService.needsPointer()) RemoteCursor.hide()
-                        val ok = RemoteAccessibilityService.press("ok")
-                        android.util.Log.i("DebugPad", "key=ok handled=$ok cursor=${RemoteCursor.visible}")
+                        val moved = RemoteAccessibilityService.moveFocus(key)
+                        val pressed = if (!moved) RemoteAccessibilityService.press(key) else false
+                        android.util.Log.i("DebugPad", "key=$key moved=$moved pressed=$pressed")
                     }
                     else -> {
-                        RemoteCursor.hide()
                         val ok = RemoteAccessibilityService.press(key)
                         android.util.Log.i("DebugPad", "key=$key handled=$ok")
                     }
                 }
             }
             intent.getBooleanExtra("cursor", false) -> {
-                RemoteCursor.move(context, 120f, 0f)
+                RemoteCursor.hide()
             }
             intent.getBooleanExtra("hide", false) -> {
                 RemoteCursor.hide()
                 LivingRoomOverlay.hide()
+            }
+            intent.getBooleanExtra("nowPlaying", false) -> {
+                NotificationAccess.ensureEnabled(context)
+                val track = NowPlayingDesk.current(context)
+                android.util.Log.i(
+                    "NowPlaying",
+                    "debug connected=${NowPlayingListener.connected()} " +
+                        "enabled=${NotificationAccess.enabled(context)} " +
+                        "notifs=${NowPlayingListener.activeNotifications()?.size} " +
+                        "musicActive=${TvAudio.isPlaying(context)} " +
+                        "track=${track?.toReportJson() ?: "null"}",
+                )
+            }
+            intent.getBooleanExtra("rail", false) -> {
+                android.util.Log.i("DebugPad", RemoteAccessibilityService.debugRail())
             }
             else -> LivingRoomOverlay.show(context)
         }

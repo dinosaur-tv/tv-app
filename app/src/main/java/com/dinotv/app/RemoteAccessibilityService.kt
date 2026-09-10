@@ -47,7 +47,9 @@ class RemoteAccessibilityService : AccessibilityService() {
 
     fun press(key: String): Boolean = try {
         RemoteCursor.hide()
-        if (dismissScreensaver()) {
+        if (!TvPrefs.remoteEnabled(this)) {
+            false
+        } else if (dismissScreensaver()) {
             true
         } else {
             when (key) {
@@ -84,6 +86,7 @@ class RemoteAccessibilityService : AccessibilityService() {
 
     /** Focus move like a real remote. Soft cursor is never used. */
     fun moveFocus(key: String): Boolean {
+        if (!TvPrefs.remoteEnabled(this)) return false
         return try {
             RemoteCursor.hide()
             val direction = when (key) {

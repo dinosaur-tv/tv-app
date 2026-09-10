@@ -1,38 +1,73 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="360dp"
+<!-- The padded root keeps room for the card's shadow: the window wraps this view exactly. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingLeft="22dp"
-    android:paddingTop="18dp"
-    android:paddingRight="22dp"
-    android:paddingBottom="20dp"
-    android:background="@drawable/event_cue_card">
+    android:padding="26dp"
+    android:clipChildren="false"
+    android:clipToPadding="false">
 
-    <TextView
-        android:id="@+id/eventCueWhen"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:id="@+id/eventCueCard"
+        android:layout_width="376dp"
         android:layout_height="wrap_content"
-        android:textColor="#C4A06A"
-        android:textSize="12sp"
-        android:letterSpacing="0.14"
-        android:textAllCaps="true" />
+        android:orientation="vertical"
+        android:paddingLeft="24dp"
+        android:paddingTop="20dp"
+        android:paddingRight="24dp"
+        android:elevation="20dp"
+        android:background="@drawable/event_cue_card">
 
-    <TextView
-        android:id="@+id/eventCueTitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:textColor="#EFE6D7"
-        android:textSize="28sp"
-        android:lineSpacingMultiplier="1.05"
-        android:fontFamily="serif" />
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-    <TextView
-        android:id="@+id/eventCueMeta"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:textColor="#A89E90"
-        android:textSize="15sp" />
-</LinearLayout>
+            <View
+                android:layout_width="7dp"
+                android:layout_height="7dp"
+                android:layout_marginEnd="10dp"
+                android:background="@drawable/event_cue_dot"
+                android:contentDescription="@null" />
+
+            <TextView
+                android:id="@+id/eventCueWhen"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#D8B279"
+                android:textSize="12sp"
+                android:letterSpacing="0.16"
+                android:textAllCaps="true" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/eventCueTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#F3EBDD"
+            android:textSize="28sp"
+            android:lineSpacingMultiplier="1.08"
+            android:maxLines="3"
+            android:ellipsize="end"
+            android:fontFamily="serif" />
+
+        <TextView
+            android:id="@+id/eventCueMeta"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="7dp"
+            android:textColor="#AEA496"
+            android:textSize="15sp" />
+
+        <!-- Drains from full width to nothing, so the card's remaining time is visible at a glance. -->
+        <View
+            android:id="@+id/eventCueProgress"
+            android:layout_width="match_parent"
+            android:layout_height="2dp"
+            android:layout_marginTop="18dp"
+            android:layout_marginBottom="18dp"
+            android:background="@drawable/event_cue_progress" />
+    </LinearLayout>
+</FrameLayout>

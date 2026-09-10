@@ -2,6 +2,7 @@
     <application>
         <receiver
             android:name=".DebugOverlayReceiver"
+            android:permission="android.permission.DUMP"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.dinotv.app.DEBUG_OVERLAY" />
