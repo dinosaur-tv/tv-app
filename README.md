@@ -6,7 +6,7 @@
 
 ## Сборка
 
-JDK 17, Android SDK 35. Телевизор: Android 8/API 26+.
+JDK 17, Android SDK 37 (сборка идёт против 37, поведение остаётся на targetSdk 35). Телевизор: Android 8/API 26+.
 
 ```bash
 ./gradlew :app:assembleDebug \
