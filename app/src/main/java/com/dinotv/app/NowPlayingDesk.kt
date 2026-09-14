@@ -136,12 +136,9 @@ object NowPlayingDesk {
             session?.title?.takeUnless { it == NowPlayingMeta.sourceFor(packageName) }.orEmpty()
         }
         val resolvedArtist = artist.ifBlank { session?.artist.orEmpty() }
-        val playing = when {
-            session?.isPlaying == true -> true
-            playingHint -> true
-            session != null -> session.isPlaying
-            else -> false
-        }
+        // The session knows whether the track is moving. Any sound in the room used to
+        // override it, so a paused player read as playing whenever a film was on.
+        val playing = session?.isPlaying ?: playingHint
         return NowPlayingMeta.from(
             packageName,
             resolvedTitle.ifBlank { null },
