@@ -49,6 +49,15 @@ object TvPrefs {
         prefs(context).edit().putBoolean(OVERLAY_PROMPTED, true).apply()
     }
 
+    /**
+     * Asked once at first launch, the question is easy to wave away — and then «Поверх
+     * музыки» can never work again. Reopening it lets the app ask once more, at the moment
+     * somebody actually pressed the button that needs it.
+     */
+    fun forgetOverlayPrompt(context: Context) {
+        prefs(context).edit().putBoolean(OVERLAY_PROMPTED, false).apply()
+    }
+
     fun listenerPrompted(context: Context): Boolean = prefs(context).getBoolean(LISTENER_PROMPTED, false)
 
     fun markListenerPrompted(context: Context) {

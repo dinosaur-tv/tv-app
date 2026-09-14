@@ -97,6 +97,9 @@ class TvWakeService : Service() {
                 // Lets the phone show «LG 43UQ81» instead of «Телевизор 2». A name someone
                 // typed in the console wins: the server only fills in the untouched ones.
                 if (screenName.isNotEmpty()) connection.setRequestProperty("X-Dino-Screen-Name", screenName)
+                // Without this permission Dino cannot appear over Кинопоиск at all, and the
+                // remote would go on offering a button that quietly does nothing.
+                connection.setRequestProperty("X-Dino-Overlay", if (Settings.canDrawOverlays(this)) "1" else "0")
                 connection.connectTimeout = 4_000
                 connection.readTimeout = 4_000
                 connection.inputStream.bufferedReader().use { it.readText() }
@@ -124,6 +127,11 @@ class TvWakeService : Service() {
             if (TvWakePolicy.keepHostPlaying(TvAudio.isPlaying(this), Settings.canDrawOverlays(this), track != null)) {
                 onMain { LivingRoomOverlay.show(this) }
                 return
+            }
+            // Somebody asked for Dino over the music and the permission is missing: let the
+            // app ask again the next time it is in front, instead of never asking at all.
+            if (!Settings.canDrawOverlays(this) && (TvAudio.isPlaying(this) || track != null)) {
+                TvPrefs.forgetOverlayPrompt(this)
             }
             onMain { LivingRoomOverlay.hide() }
             requestForeground()

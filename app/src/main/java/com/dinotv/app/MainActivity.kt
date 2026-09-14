@@ -40,6 +40,9 @@ class MainActivity : ComponentActivity() {
         TvForeground.visible = true
         TvAudio.abandon(this)
         startWakeService()
+        // The service reopens the question when someone asks for Dino over the music and
+        // the permission turns out to be missing; this is where it can actually be asked.
+        askOverlayPermission()
     }
 
     override fun onPause() {
