@@ -50,15 +50,23 @@ object NowPlayingDesk {
         }
     }
 
+    /**
+     * The sessions Android itself considers live. This is the only honest answer to «can
+     * this be controlled»: a token left inside a stale notification still builds a
+     * controller and still reports the last thing it saw, but nothing is listening behind
+     * it, so play and pause vanish without a trace.
+     */
+    private fun liveSessions(context: Context): List<MediaController> = try {
+        context.getSystemService(MediaSessionManager::class.java)
+            ?.getActiveSessions(ComponentName(context, NowPlayingListener::class.java))
+            .orEmpty()
+    } catch (_: SecurityException) {
+        NotificationAccess.ensureEnabled(context)
+        emptyList()
+    }
+
     private fun activeController(context: Context): MediaController? {
-        val manager = context.getSystemService(MediaSessionManager::class.java) ?: return null
-        val listener = ComponentName(context, NowPlayingListener::class.java)
-        val sessions = try {
-            manager.getActiveSessions(listener)
-        } catch (_: SecurityException) {
-            NotificationAccess.ensureEnabled(context)
-            emptyList()
-        }
+        val sessions = liveSessions(context)
         if (sessions.isEmpty()) return null
         val ranked = sessions.mapNotNull { controller ->
             val track = fromController(controller, context) ?: return@mapNotNull null
@@ -73,35 +81,23 @@ object NowPlayingDesk {
     }
 
     private fun controllerFromNotification(context: Context): MediaController? {
+        val live = liveSessions(context)
+        if (live.isEmpty()) return null
         val notifications = NowPlayingListener.activeNotifications() ?: return null
         for (notification in notifications) {
             if (!isMusicPackage(notification.packageName)) continue
             val token = mediaToken(notification.notification) ?: continue
-            val controller = try {
-                MediaController(context, token)
-            } catch (_: Exception) {
-                null
-            }
-            if (alive(controller)) return controller
+            live.firstOrNull { it.sessionToken == token }?.let { return it }
         }
         return null
     }
 
-    /**
-     * A session that still answers. A token left behind by a closed player builds a
-     * controller happily and then reports nothing at all — no state, no metadata — and
-     * every transport control sent to it disappears without a word.
-     */
-    private fun alive(controller: MediaController?): Boolean {
-        if (controller == null) return false
-        return try {
-            controller.playbackState != null || controller.metadata != null
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     private fun fromNotification(context: Context): NowPlayingTrack? {
+        // Кинопоиск оставляет уведомление плеера висеть и после того, как сам плеер
+        // закрылся. Показывать такой трек нечестно: им нельзя управлять, и кнопка
+        // «играть» уходила бы в пустоту. Считается только то, что Android зовёт живым.
+        val live = liveSessions(context)
+        if (live.isEmpty()) return null
         val notifications = NowPlayingListener.activeNotifications() ?: return null
         var best: NowPlayingTrack? = null
         for (notification in notifications) {
@@ -118,10 +114,7 @@ object NowPlayingDesk {
                     null
                 }
             }
-            // Кинопоиск оставляет уведомление плеера висеть и после того, как сам плеер
-            // закрылся: токен ещё есть, сессии за ним уже нет. Такой трек не показать
-            // честно — им нельзя управлять, и кнопка «играть» уходила бы в пустоту.
-            if (!alive(controller)) continue
+            if (live.none { it.sessionToken == token }) continue
             val fromSession = controller?.let { fromController(it, context) }
             // Kinopoisk often keeps a MediaSession token with empty metadata while the
             // MediaStyle notification still has the real title/artist — prefer extras.

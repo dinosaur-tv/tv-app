@@ -16,8 +16,8 @@ android {
         applicationId = "com.dinotv.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 43
-        versionName = "1.0.5"
+        versionCode = 44
+        versionName = "1.0.6"
         val homeUrl = providers.gradleProperty("DINO_HOME_URL").orElse("https://home.example.invalid/tv/").get()
         val apiUrl = providers.gradleProperty("DINO_API_BASE_URL").orElse("https://home.example.invalid/api").get().trimEnd('/')
         for (url in listOf(homeUrl, apiUrl)) {
