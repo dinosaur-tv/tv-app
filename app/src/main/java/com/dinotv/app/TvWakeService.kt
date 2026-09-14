@@ -18,6 +18,7 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.dinotv.app.domain.MusicRemote
+import com.dinotv.app.domain.ScreenName
 import com.dinotv.app.domain.TvRemote
 import com.dinotv.app.domain.TvRemoteCommand
 import com.dinotv.app.domain.EventReminders
@@ -36,6 +37,7 @@ class TvWakeService : Service() {
     private val worker = Executors.newSingleThreadScheduledExecutor()
     private val main = Handler(Looper.getMainLooper())
     private val wakeToken = Any()
+    private val screenName = ScreenName.of(Build.MANUFACTURER ?: "", Build.MODEL ?: "")
     private var latestTrack: NowPlayingTrack? = null
     private var lastMediaCheckAt = 0L
     private var lastNowPlayingPayload = ""
@@ -92,6 +94,9 @@ class TvWakeService : Service() {
                 connection.requestMethod = "GET"
                 connection.setRequestProperty("Authorization", "Bearer $session")
                 connection.setRequestProperty("X-Dino-Visible", if (TvForeground.visible) "1" else "0")
+                // Lets the phone show «LG 43UQ81» instead of «Телевизор 2». A name someone
+                // typed in the console wins: the server only fills in the untouched ones.
+                if (screenName.isNotEmpty()) connection.setRequestProperty("X-Dino-Screen-Name", screenName)
                 connection.connectTimeout = 4_000
                 connection.readTimeout = 4_000
                 connection.inputStream.bufferedReader().use { it.readText() }
