@@ -20,24 +20,14 @@ object NowPlayingDesk {
 
     fun reportJson(context: Context): String = current(context)?.toReportJson() ?: """{"title":""}"""
 
+    /**
+     * Sound coming out of the television is not the same as music playing. A film has a
+     * soundtrack too, and reporting it as «Яндекс Музыка» told the phone a track was on
+     * when nothing was. Only a media session or a media notification counts as one.
+     */
     fun current(context: Context): NowPlayingTrack? {
         NotificationAccess.ensureEnabled(context)
-        return fromController(activeController(context), context)
-            ?: fromNotification(context)
-            ?: if (TvAudio.isPlaying(context)) {
-                NowPlayingMeta.from(
-                    "ru.kinopoisk.tv",
-                    null,
-                    null,
-                    null,
-                    true,
-                    TvAudio.volumePercent(context),
-                    100,
-                    allowUntitled = true,
-                )
-            } else {
-                null
-            }
+        return fromController(activeController(context), context) ?: fromNotification(context)
     }
 
     fun apply(context: Context, action: String, volume: Int?) {
