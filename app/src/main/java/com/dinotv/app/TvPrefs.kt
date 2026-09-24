@@ -1,6 +1,7 @@
 package com.dinotv.app
 
 import android.content.Context
+import com.dinotv.app.domain.UserDismiss
 
 object TvPrefs {
     fun remoteEnabled(context: Context): Boolean = prefs(context).getBoolean("remoteEnabled", false)
@@ -16,6 +17,7 @@ object TvPrefs {
     private const val LISTENER_PROMPTED = "listenerPrompted"
     private const val MUSIC_COMMAND_AT = "musicCommandAt"
     private const val TV_COMMAND_AT = "tvCommandAt"
+    private const val USER_DISMISSED_UNTIL = "userDismissedUntil"
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -74,5 +76,18 @@ object TvPrefs {
 
     fun saveTvCommandAt(context: Context, token: String) {
         prefs(context).edit().putString(TV_COMMAND_AT, token).apply()
+    }
+
+    fun userDismissed(context: Context, nowEpochMs: Long = System.currentTimeMillis()): Boolean =
+        UserDismiss.isActive(prefs(context).getLong(USER_DISMISSED_UNTIL, 0L), nowEpochMs)
+
+    fun markUserDismissed(context: Context, nowEpochMs: Long = System.currentTimeMillis()) {
+        prefs(context).edit()
+            .putLong(USER_DISMISSED_UNTIL, UserDismiss.until(nowEpochMs))
+            .apply()
+    }
+
+    fun clearUserDismissed(context: Context) {
+        prefs(context).edit().remove(USER_DISMISSED_UNTIL).apply()
     }
 }

@@ -5,9 +5,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
@@ -23,8 +25,16 @@ class MainActivity : ComponentActivity() {
         askOverlayPermission()
         askNotificationAccess()
         startWakeService()
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    leaveForTvRemote()
+                }
+            },
+        )
         screen = WebView(this).also { webView ->
-            TvScreen.bind(webView, DinoTvBridge(this) { moveTaskToBack(true) }, TvPrefs.session(this))
+            TvScreen.bind(webView, DinoTvBridge(this) { leaveForTvRemote() }, TvPrefs.session(this))
             setContentView(webView)
         }
     }
@@ -32,6 +42,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // Phone / console asked for Dino again — clear the local "stay away" window.
+        TvPrefs.clearUserDismissed(this)
         startWakeService()
     }
 
@@ -63,8 +75,35 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && isLeaveKey(event.keyCode)) {
+            leaveForTvRemote()
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     fun startWakeService() {
         ContextCompat.startForegroundService(this, Intent(this, TvWakeService::class.java))
+    }
+
+    private fun leaveForTvRemote() {
+        TvPrefs.markUserDismissed(this)
+        LivingRoomOverlay.hide()
+        ContextCompat.startForegroundService(
+            this,
+            Intent(this, TvWakeService::class.java).setAction(TvWakeService.ACTION_USER_DISMISS),
+        )
+        moveTaskToBack(true)
+    }
+
+    private fun isLeaveKey(keyCode: Int): Boolean = when (keyCode) {
+        KeyEvent.KEYCODE_BACK,
+        KeyEvent.KEYCODE_ESCAPE,
+        KeyEvent.KEYCODE_HOME,
+        KeyEvent.KEYCODE_BUTTON_B,
+        -> true
+        else -> false
     }
 
     private fun askOverlayPermission() {

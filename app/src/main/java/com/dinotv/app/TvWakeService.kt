@@ -58,9 +58,18 @@ class TvWakeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_USER_DISMISS -> {
+                // Physical Back/Home: cancel pending wake alarms so they do not
+                // reopen Dino a second later while the console still says "on".
+                cancelDinoWake()
+                onMain { LivingRoomOverlay.hide() }
+                return START_STICKY
+            }
         }
         return START_STICKY
     }
@@ -123,6 +132,8 @@ class TvWakeService : Service() {
                 onMain { LivingRoomOverlay.hide() }
                 return
             }
+            // A fresh power-on from the phone is intentional — clear the local leave window.
+            TvPrefs.clearUserDismissed(this)
             val track = latestTrack
             if (TvWakePolicy.keepHostPlaying(TvAudio.isPlaying(this), Settings.canDrawOverlays(this), track != null)) {
                 onMain { LivingRoomOverlay.show(this) }
@@ -191,6 +202,7 @@ class TvWakeService : Service() {
                 RemoteCursor.hide()
                 LivingRoomOverlay.hide()
                 if (app == "dino") {
+                    TvPrefs.clearUserDismissed(this)
                     requestForeground()
                     return
                 }
@@ -311,13 +323,14 @@ class TvWakeService : Service() {
     }
 
     private fun requestForeground() {
+        if (TvPrefs.userDismissed(this)) return
         main.postAtTime({ bringDinoToFront() }, wakeToken, SystemClock.uptimeMillis())
         main.postAtTime({ bringDinoToFront() }, wakeToken, SystemClock.uptimeMillis() + 700)
         main.postAtTime({ bringDinoToFront() }, wakeToken, SystemClock.uptimeMillis() + 1_800)
     }
 
     private fun bringDinoToFront() {
-        if (stopped) return
+        if (stopped || TvPrefs.userDismissed(this)) return
         val open = TvLaunch.intent(this)
         moveOwnTasksToFront()
         scheduleAlarmClock(open)
@@ -438,6 +451,7 @@ class TvWakeService : Service() {
 
     companion object {
         private const val ACTION_STOP = "com.dinotv.app.STOP_MONITORING"
+        const val ACTION_USER_DISMISS = "com.dinotv.app.USER_DISMISS"
         private const val CHANNEL_ID = "dino_tv_wake"
         private const val WAKE_CHANNEL_ID = "dino_tv_open"
         private const val NOTIFICATION_ID = 7
