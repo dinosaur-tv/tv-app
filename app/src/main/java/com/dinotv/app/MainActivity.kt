@@ -75,12 +75,12 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action == KeyEvent.ACTION_DOWN && isLeaveKey(event.keyCode)) {
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (event != null && event.action == KeyEvent.ACTION_DOWN && isLeaveKey(keyCode)) {
             leaveForTvRemote()
             return true
         }
-        return super.dispatchKeyEvent(event)
+        return super.onKeyDown(keyCode, event)
     }
 
     fun startWakeService() {
