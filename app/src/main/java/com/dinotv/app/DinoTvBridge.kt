@@ -22,6 +22,18 @@ class DinoTvBridge(
     fun nowPlaying(): String = NowPlayingDesk.json(context)
 
     @JavascriptInterface
+    fun audioSpectrum(): String {
+        val result = TvAudioVisualizer.snapshot(context)
+        if (result.contains(TvAudioVisualizer.PERMISSION_REQUIRED)) {
+            (context as? MainActivity)?.requestAudioVisualizerPermission()
+        }
+        return result
+    }
+
+    @JavascriptInterface
+    fun stopAudioSpectrum() = TvAudioVisualizer.release()
+
+    @JavascriptInterface
     fun isForeground(): String = if (TvForeground.visible) "1" else "0"
 
     @JavascriptInterface

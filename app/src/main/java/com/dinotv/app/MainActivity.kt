@@ -1,6 +1,9 @@
 package com.dinotv.app
 
+import android.Manifest
+import android.app.AlertDialog
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -10,10 +13,22 @@ import android.view.WindowManager
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
     private var screen: WebView? = null
+    @Volatile private var audioPermissionPromptQueued = false
+    @Volatile private var audioPermissionPromptDismissed = false
+    private val audioPermissionRequest = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        audioPermissionPromptQueued = false
+        if (granted) {
+            audioPermissionPromptDismissed = false
+            TvAudioVisualizer.snapshot(this)
+        } else {
+            audioPermissionPromptDismissed = true
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -58,11 +73,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        TvAudioVisualizer.release()
         if (!LivingRoomOverlay.visible) TvForeground.visible = false
         super.onPause()
     }
 
     override fun onDestroy() {
+        TvAudioVisualizer.release()
         screen?.apply {
             stopLoading()
             removeJavascriptInterface("DinoTV")
@@ -73,6 +90,38 @@ class MainActivity : ComponentActivity() {
         }
         screen = null
         super.onDestroy()
+    }
+
+    fun requestAudioVisualizerPermission() {
+        if (audioPermissionPromptDismissed || audioPermissionPromptQueued) return
+        audioPermissionPromptQueued = true
+        runOnUiThread {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                audioPermissionPromptQueued = false
+                TvAudioVisualizer.snapshot(this)
+                return@runOnUiThread
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Эквалайзер")
+                .setMessage(
+                    "Чтобы полосы двигались в такт музыке, Dino TV считывает только уровни частот " +
+                        "звука, который уже воспроизводится на телевизоре. Аудио не записывается и не отправляется.",
+                )
+                .setNegativeButton("Не сейчас") { _, _ ->
+                    audioPermissionPromptQueued = false
+                    audioPermissionPromptDismissed = true
+                }
+                .setPositiveButton("Продолжить") { _, _ ->
+                    audioPermissionRequest.launch(Manifest.permission.RECORD_AUDIO)
+                }
+                .setOnCancelListener {
+                    audioPermissionPromptQueued = false
+                    audioPermissionPromptDismissed = true
+                }
+                .show()
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
