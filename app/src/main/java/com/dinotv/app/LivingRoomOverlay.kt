@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 
 object LivingRoomOverlay {
     private var webView: WebView? = null
+    private var windowManager: WindowManager? = null
     // Focusable so Back / Home on the physical remote can dismiss «Поверх музыки»
     // instead of silently driving the player underneath a frozen Dino picture.
     internal const val WINDOW_FLAGS = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -25,8 +26,15 @@ object LivingRoomOverlay {
         if (!Settings.canDrawOverlays(context)) return
         if (TvPrefs.userDismissed(context)) return
         val app = context.applicationContext
-        val screen = WebView(app)
-        val type = if (Build.VERSION.SDK_INT >= 26) {
+        // A full-screen APPLICATION_OVERLAY hides the player from accessibility.
+        // Use the connected service's window context/token so track changes remain
+        // readable underneath Dino, including on TVs with no MediaSession.
+        val accessibility = RemoteAccessibilityService.overlayContext()
+        val host = accessibility ?: app
+        val screen = WebView(host)
+        val type = if (accessibility != null) {
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        } else if (Build.VERSION.SDK_INT >= 26) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
             @Suppress("DEPRECATION")
@@ -37,7 +45,9 @@ object LivingRoomOverlay {
             WindowManager.LayoutParams.MATCH_PARENT,
             type,
             WINDOW_FLAGS,
-            PixelFormat.OPAQUE,
+            // Keep the host rendering/layout active as its track views change.
+            // Dino's own page still paints the complete background.
+            PixelFormat.TRANSLUCENT,
         )
         TvScreen.bind(screen, DinoTvBridge(app) { dismissFromRemote(app) }, TvPrefs.session(app))
         screen.setOnKeyListener { _, keyCode, event ->
@@ -51,9 +61,10 @@ object LivingRoomOverlay {
         screen.isFocusable = true
         screen.isFocusableInTouchMode = true
         TvAudio.abandon(app)
-        val wm = app.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val wm = host.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         try {
             wm.addView(screen, params)
+            windowManager = wm
             webView = screen
             TvForeground.visible = true
             screen.requestFocus()
@@ -68,9 +79,11 @@ object LivingRoomOverlay {
         OverlayScreenAwake.stop()
         val screen = webView ?: return
         webView = null
+        val wm = windowManager
+        windowManager = null
         TvForeground.visible = false
         try {
-            (screen.context.getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(screen)
+            wm?.removeView(screen)
         } catch (_: Exception) {
             // Already gone.
         }

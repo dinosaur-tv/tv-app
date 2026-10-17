@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         askOverlayPermission()
         askNotificationAccess()
+        TvPrefs.clearUserDismissed(this)
         startWakeService()
         if (showOverMusic()) return
         onBackPressedDispatcher.addCallback(
@@ -178,7 +179,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun askNotificationAccess() {
-        if (TvPrefs.listenerPrompted(this)) return
+        if (NotificationAccess.enabled(this) || TvPrefs.listenerPrompted(this)) return
         TvPrefs.markListenerPrompted(this)
         try {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))

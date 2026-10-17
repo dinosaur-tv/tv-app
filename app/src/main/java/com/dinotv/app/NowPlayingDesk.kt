@@ -26,7 +26,8 @@ object NowPlayingDesk {
     /**
      * Sound coming out of the television is not the same as music playing. A film has a
      * soundtrack too, and reporting it as «Яндекс Музыка» told the phone a track was on
-     * when nothing was. Only a media session or a media notification counts as one.
+     * when nothing was. Require a live media session, a validated notification or
+     * the actual Kinopoisk music player with its matching cover and title.
      */
     fun current(context: Context): NowPlayingTrack? {
         NotificationAccess.ensureEnabled(context)

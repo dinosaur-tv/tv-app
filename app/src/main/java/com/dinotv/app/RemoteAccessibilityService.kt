@@ -2,6 +2,7 @@ package com.dinotv.app
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.content.Context
 import android.content.Intent
 import android.graphics.Path
 import android.graphics.Rect
@@ -42,7 +43,11 @@ class RemoteAccessibilityService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     override fun onDestroy() {
-        if (instance === this) instance = null
+        if (instance === this) {
+            // An accessibility overlay belongs to this connection's window token.
+            LivingRoomOverlay.hide()
+            instance = null
+        }
         super.onDestroy()
     }
 
@@ -465,20 +470,39 @@ class RemoteAccessibilityService : AccessibilityService() {
         rootInActiveWindow
     }
 
+    @Suppress("DEPRECATION") // Android 12 and earlier still pool accessibility objects.
     private fun musicOnScreen(): KinopoiskNowPlaying.Track? {
-        val roots = windows.orEmpty().mapNotNull { it.root } + listOfNotNull(rootInActiveWindow)
-        for (root in roots) {
-            if (root.packageName?.toString() != TvApps.KINOPOISK) continue
-            val nodes = walk(root).map { node ->
+        val visibleWindows = windows.orEmpty()
+        try {
+            for (window in visibleWindows) {
+                val root = window.root ?: continue
+                readMusicRoot(root)?.let { return it }
+            }
+        } finally {
+            visibleWindows.forEach { it.recycle() }
+        }
+        return rootInActiveWindow?.let { readMusicRoot(it) }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun readMusicRoot(root: AccessibilityNodeInfo): KinopoiskNowPlaying.Track? {
+        if (root.packageName?.toString() != TvApps.KINOPOISK) {
+            root.recycle()
+            return null
+        }
+        val nodes = walk(root)
+        return try {
+            val metadata = nodes.map { node ->
                 val box = Rect().also { node.getBoundsInScreen(it) }
                 KinopoiskNowPlaying.Node(
                     node.text?.toString().orEmpty(), node.contentDescription?.toString().orEmpty(),
                     box.left, box.top, box.right, box.bottom,
                 )
             }
-            KinopoiskNowPlaying.read(TvApps.KINOPOISK, nodes)?.let { return it }
+            KinopoiskNowPlaying.read(TvApps.KINOPOISK, metadata)
+        } finally {
+            nodes.forEach { it.recycle() }
         }
-        return null
     }
 
     private fun focusedNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
@@ -757,6 +781,8 @@ class RemoteAccessibilityService : AccessibilityService() {
         }
 
         fun connected(): Boolean = instance != null
+
+        internal fun overlayContext(): Context? = instance
 
         fun nowPlaying(): KinopoiskNowPlaying.Track? = try {
             instance?.musicOnScreen()
