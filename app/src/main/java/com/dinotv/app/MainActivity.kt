@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
         askOverlayPermission()
         askNotificationAccess()
         startWakeService()
+        if (showOverMusic()) return
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {
@@ -60,6 +61,15 @@ class MainActivity : ComponentActivity() {
         // Phone / console asked for Dino again — clear the local "stay away" window.
         TvPrefs.clearUserDismissed(this)
         startWakeService()
+        showOverMusic()
+    }
+
+    private fun showOverMusic(): Boolean {
+        if (!Settings.canDrawOverlays(this) || NowPlayingDesk.current(this) == null) return false
+        LivingRoomOverlay.show(this)
+        if (!LivingRoomOverlay.visible) return false
+        finish()
+        return true
     }
 
     override fun onResume() {

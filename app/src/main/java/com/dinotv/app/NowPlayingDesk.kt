@@ -10,12 +10,15 @@ import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.SystemClock
 import android.util.Base64
 import com.dinotv.app.domain.NowPlayingMeta
 import com.dinotv.app.domain.NowPlayingTrack
 import java.io.ByteArrayOutputStream
 
 object NowPlayingDesk {
+    @Volatile private var lastUiTrack: NowPlayingTrack? = null
+    @Volatile private var lastUiAt = 0L
     fun json(context: Context): String = current(context)?.toJson().orEmpty()
 
     fun reportJson(context: Context): String = current(context)?.toReportJson() ?: """{"title":""}"""
@@ -27,7 +30,22 @@ object NowPlayingDesk {
      */
     fun current(context: Context): NowPlayingTrack? {
         NotificationAccess.ensureEnabled(context)
-        return fromController(activeController(context), context) ?: fromNotification(context)
+        val ui = RemoteAccessibilityService.nowPlaying()
+        val now = SystemClock.elapsedRealtime()
+        if (ui != null) {
+            val track = NowPlayingMeta.from(
+                TvApps.KINOPOISK, ui.title, ui.artist, null, TvAudio.isPlaying(context),
+                TvAudio.volumePercent(context), 100,
+            )
+            lastUiTrack = track
+            lastUiAt = now
+            return track
+        }
+        val session = fromController(activeController(context), context) ?: fromNotification(context)
+        if (session != null) return session
+        // Bridge the short window transition when Dino opens above the player.
+        // Never keep old UI metadata alive indefinitely over a film or a closed app.
+        return lastUiTrack?.takeIf { now - lastUiAt < 5_000 }?.copy(isPlaying = TvAudio.isPlaying(context))
     }
 
     fun apply(context: Context, action: String, volume: Int?) {

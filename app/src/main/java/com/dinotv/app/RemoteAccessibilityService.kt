@@ -17,6 +17,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.dinotv.app.domain.KinopoiskNowPlaying
 import java.util.concurrent.TimeUnit
 
 class RemoteAccessibilityService : AccessibilityService() {
@@ -464,6 +465,22 @@ class RemoteAccessibilityService : AccessibilityService() {
         rootInActiveWindow
     }
 
+    private fun musicOnScreen(): KinopoiskNowPlaying.Track? {
+        val roots = windows.orEmpty().mapNotNull { it.root } + listOfNotNull(rootInActiveWindow)
+        for (root in roots) {
+            if (root.packageName?.toString() != TvApps.KINOPOISK) continue
+            val nodes = walk(root).map { node ->
+                val box = Rect().also { node.getBoundsInScreen(it) }
+                KinopoiskNowPlaying.Node(
+                    node.text?.toString().orEmpty(), node.contentDescription?.toString().orEmpty(),
+                    box.left, box.top, box.right, box.bottom,
+                )
+            }
+            KinopoiskNowPlaying.read(TvApps.KINOPOISK, nodes)?.let { return it }
+        }
+        return null
+    }
+
     private fun focusedNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? =
         root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             ?: root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
@@ -740,6 +757,12 @@ class RemoteAccessibilityService : AccessibilityService() {
         }
 
         fun connected(): Boolean = instance != null
+
+        fun nowPlaying(): KinopoiskNowPlaying.Track? = try {
+            instance?.musicOnScreen()
+        } catch (_: Throwable) {
+            null
+        }
 
         fun debugRail(): String = try {
             instance?.debugRailState() ?: "a11y offline"
