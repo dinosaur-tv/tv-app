@@ -33,7 +33,7 @@ object TvScreen {
         webView.settings.allowFileAccess = false
         webView.settings.allowContentAccess = false
         webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
         // Scenes play silent filmed loops (no audio track, so no audio focus is taken from
         // the music underneath); they must start without a tap on a TV that has no pointer.
         webView.settings.mediaPlaybackRequiresUserGesture = false
