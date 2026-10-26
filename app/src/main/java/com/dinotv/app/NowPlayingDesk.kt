@@ -12,6 +12,7 @@ import android.media.session.PlaybackState
 import android.os.Build
 import android.os.SystemClock
 import android.util.Base64
+import android.view.KeyEvent
 import com.dinotv.app.domain.NowPlayingMeta
 import com.dinotv.app.domain.NowPlayingTrack
 import java.io.ByteArrayOutputStream
@@ -54,7 +55,15 @@ object NowPlayingDesk {
             if (volume != null) TvAudio.setVolumePercent(context, volume)
             return
         }
-        val controller = activeController(context) ?: controllerFromNotification(context) ?: return
+        val controller = activeController(context) ?: controllerFromNotification(context)
+        // The Kinopoisk music player is often read off its screen with no live session
+        // behind it, or with one that does not offer skipping. Commands to it used to
+        // vanish; a media key reaches whichever player holds the media buttons, exactly
+        // like the button on the TV remote.
+        if (controller == null || !controller.supports(action)) {
+            mediaKey(action)?.let { TvAudio.pressMediaKey(context, it) }
+            return
+        }
         val controls = controller.transportControls
         when (action) {
             "play" -> controls.play()
@@ -67,6 +76,27 @@ object NowPlayingDesk {
                 if (playing) controls.pause() else controls.play()
             }
         }
+    }
+
+    private fun MediaController.supports(action: String): Boolean {
+        val actions = playbackState?.actions ?: return false
+        val needed = when (action) {
+            "next" -> PlaybackState.ACTION_SKIP_TO_NEXT
+            "previous" -> PlaybackState.ACTION_SKIP_TO_PREVIOUS
+            "play" -> PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PLAY_PAUSE
+            "pause" -> PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE
+            else -> PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or PlaybackState.ACTION_PLAY_PAUSE
+        }
+        return actions and needed != 0L
+    }
+
+    private fun mediaKey(action: String): Int? = when (action) {
+        "next" -> KeyEvent.KEYCODE_MEDIA_NEXT
+        "previous" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+        "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
+        "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
+        "toggle" -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+        else -> null
     }
 
     /**

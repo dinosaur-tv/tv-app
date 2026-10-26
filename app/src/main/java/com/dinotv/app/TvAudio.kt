@@ -2,6 +2,7 @@ package com.dinotv.app
 
 import android.content.Context
 import android.media.AudioManager
+import android.view.KeyEvent
 import com.dinotv.app.domain.TvVolume
 
 object TvAudio {
@@ -30,6 +31,13 @@ object TvAudio {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         @Suppress("DEPRECATION")
         audio.setStreamMute(AudioManager.STREAM_MUSIC, !audio.isStreamMute(AudioManager.STREAM_MUSIC))
+    }
+
+    /** A press and release of a media key, delivered to the app that owns media buttons. */
+    fun pressMediaKey(context: Context, keyCode: Int) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        audio.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
     }
 
     fun abandon(context: Context) {

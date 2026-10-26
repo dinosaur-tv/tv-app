@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.audiofx.Visualizer
+import android.os.SystemClock
+import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlin.math.floor
 import kotlin.math.log10
@@ -15,6 +17,10 @@ object TvAudioVisualizer {
     private const val ACTIVE = "active"
     private const val UNAVAILABLE = "unavailable"
     private const val IDLE = "idle"
+    /** Capture runs but hears nothing while music plays: protected output, zeroed by the HAL. */
+    private const val SILENT = "silent"
+    private const val SILENCE_MS = 2_500L
+    private const val TAG = "DinoSpectrum"
     private const val BAND_COUNT = 5
     private const val CAPTURE_RATE = 20_000 // milliHz, about 20 FFT snapshots per second
     private val lock = Any()
@@ -22,6 +28,8 @@ object TvAudioVisualizer {
     @Volatile private var visualizer: Visualizer? = null
     @Volatile private var state = IDLE
     @Volatile private var levels = FloatArray(BAND_COUNT)
+    @Volatile private var lastSoundAt = 0L
+    @Volatile private var reported = ""
 
     /** Enables capture only while music is playing and the user has granted audio permission. */
     fun snapshot(context: Context): String {
@@ -32,7 +40,7 @@ object TvAudioVisualizer {
                 release()
                 state = PERMISSION_REQUIRED
             }
-            return json()
+            return json(state)
         }
 
         synchronized(lock) {
@@ -62,13 +70,27 @@ object TvAudioVisualizer {
                     capture.enabled = true
                     visualizer = capture
                     state = ACTIVE
-                } catch (_: Exception) {
+                    lastSoundAt = SystemClock.elapsedRealtime()
+                } catch (error: Exception) {
+                    Log.w(TAG, "visualizer unavailable: ${error.message}")
                     state = UNAVAILABLE
                     levels = FloatArray(BAND_COUNT)
                 }
             }
         }
-        return json()
+        return json(heard(context))
+    }
+
+    /**
+     * Some TVs hand the global mix to the visualizer as zeros (protected or offloaded
+     * playback). The page then drew flat bars and called it a spectrum; reporting it as
+     * silent lets the page fall back to its own gentle wave instead.
+     */
+    private fun heard(context: Context): String {
+        if (state != ACTIVE) return state
+        val now = SystemClock.elapsedRealtime()
+        if (levels.any { it > 0.04f }) lastSoundAt = now
+        return if (TvAudio.isPlaying(context) && now - lastSoundAt > SILENCE_MS) SILENT else ACTIVE
     }
 
     fun release() {
@@ -114,8 +136,12 @@ object TvAudioVisualizer {
         }
     }
 
-    private fun json(): String {
+    private fun json(shown: String): String {
+        if (shown != reported) {
+            reported = shown
+            Log.i(TAG, "spectrum state: $shown")
+        }
         val formatted = levels.joinToString(",") { "%.3f".format(java.util.Locale.US, it) }
-        return """{"state":"$state","bands":[$formatted]}"""
+        return """{"state":"$shown","bands":[$formatted]}"""
     }
 }
