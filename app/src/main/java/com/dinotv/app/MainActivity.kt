@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
     private var screen: WebView? = null
+    private var overlayAfterAudioPermission = false
     @Volatile private var audioPermissionPromptQueued = false
     @Volatile private var audioPermissionPromptDismissed = false
     private val audioPermissionRequest = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -28,6 +29,7 @@ class MainActivity : ComponentActivity() {
         } else {
             audioPermissionPromptDismissed = true
         }
+        resumePendingOverlay()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -67,10 +69,29 @@ class MainActivity : ComponentActivity() {
 
     private fun showOverMusic(): Boolean {
         if (!Settings.canDrawOverlays(this) || NowPlayingDesk.current(this) == null) return false
+        // The overlay bridge has an application Context and cannot request runtime
+        // permissions. Keep this Activity alive until the audio choice is complete.
+        if (!audioPermissionPromptDismissed && ContextCompat.checkSelfPermission(
+                this, Manifest.permission.RECORD_AUDIO,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            overlayAfterAudioPermission = true
+            requestAudioVisualizerPermission()
+            return true
+        }
         LivingRoomOverlay.show(this)
         if (!LivingRoomOverlay.visible) return false
         finish()
         return true
+    }
+
+    private fun resumePendingOverlay() {
+        if (!overlayAfterAudioPermission) return
+        overlayAfterAudioPermission = false
+        // The permission dialog can outlive the short metadata cache; the player
+        // was verified before opening it and remains underneath this Activity.
+        LivingRoomOverlay.show(this)
+        if (LivingRoomOverlay.visible) finish()
     }
 
     override fun onResume() {
@@ -112,6 +133,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 audioPermissionPromptQueued = false
                 TvAudioVisualizer.snapshot(this)
+                resumePendingOverlay()
                 return@runOnUiThread
             }
             AlertDialog.Builder(this)
@@ -123,6 +145,7 @@ class MainActivity : ComponentActivity() {
                 .setNegativeButton("Не сейчас") { _, _ ->
                     audioPermissionPromptQueued = false
                     audioPermissionPromptDismissed = true
+                    resumePendingOverlay()
                 }
                 .setPositiveButton("Продолжить") { _, _ ->
                     audioPermissionRequest.launch(Manifest.permission.RECORD_AUDIO)
@@ -130,6 +153,7 @@ class MainActivity : ComponentActivity() {
                 .setOnCancelListener {
                     audioPermissionPromptQueued = false
                     audioPermissionPromptDismissed = true
+                    resumePendingOverlay()
                 }
                 .show()
         }
