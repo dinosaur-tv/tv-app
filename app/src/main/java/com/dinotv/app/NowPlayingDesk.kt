@@ -32,6 +32,11 @@ object NowPlayingDesk {
      */
     fun current(context: Context): NowPlayingTrack? {
         NotificationAccess.ensureEnabled(context)
+        // Kinopoisk's music player often has no media session at all; then the track is
+        // read off its screen by the accessibility service. Android drops that service when
+        // the app is updated, and only the remote's poll (when the remote is on) brought it
+        // back, so the track vanished after an update until someone pressed a button.
+        RemoteAccess.ensureEnabled(context)
         val ui = RemoteAccessibilityService.nowPlaying()
         val now = SystemClock.elapsedRealtime()
         if (ui != null) {
