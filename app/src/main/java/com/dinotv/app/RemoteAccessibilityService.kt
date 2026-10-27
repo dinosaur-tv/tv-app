@@ -355,7 +355,12 @@ class RemoteAccessibilityService : AccessibilityService() {
 
     private fun injectKey(keyCode: Int): Boolean {
         if (injectKeyReflect(keyCode)) return true
-        return injectKeyShell(keyCode)
+        if (injectKeyShell(keyCode)) return true
+        // adbd presses like the physical remote. Until the television has accepted the
+        // key, connect in the background (that shows the prompt) and use the fallbacks.
+        if (TvShell.ready) return TvShell.keyevent(this, keyCode)
+        TvShell.warmUp(this)
+        return false
     }
 
     private fun injectKeyReflect(keyCode: Int): Boolean {

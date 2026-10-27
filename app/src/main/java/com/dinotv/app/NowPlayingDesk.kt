@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.SystemClock
 import android.util.Base64
 import android.view.KeyEvent
+import com.dinotv.app.domain.MusicRemote
 import com.dinotv.app.domain.NowPlayingMeta
 import com.dinotv.app.domain.NowPlayingTrack
 import java.io.ByteArrayOutputStream
@@ -60,6 +61,12 @@ object NowPlayingDesk {
             if (volume != null) TvAudio.setVolumePercent(context, volume)
             return
         }
+        if (RemoteAccessibilityService.nowPlaying() != null) {
+            // The Kinopoisk player is on screen (maybe under Dino). Media keys never reach
+            // it: there is no media session, and MEDIA_NEXT is ignored even in focus.
+            pressInPlayer(context, action)
+            return
+        }
         val controller = activeController(context) ?: controllerFromNotification(context)
         // The Kinopoisk music player is often read off its screen with no live session
         // behind it, or with one that does not offer skipping. Commands to it used to
@@ -79,6 +86,19 @@ object NowPlayingDesk {
                 val state = controller.playbackState?.state
                 val playing = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
                 if (playing) controls.pause() else controls.play()
+            }
+        }
+    }
+
+    private fun pressInPlayer(context: Context, action: String) {
+        val app = context.applicationContext
+        val key = MusicRemote.playerKey(action, TvAudio.isPlaying(app)) ?: return
+        TvShell.later {
+            LivingRoomOverlay.withoutFocus {
+                if (!TvShell.keyevent(app, key)) {
+                    // No debugging connection: the old media key is still the best guess.
+                    mediaKey(action)?.let { TvAudio.pressMediaKey(app, it) }
+                }
             }
         }
     }

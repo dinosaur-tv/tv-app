@@ -16,8 +16,8 @@ android {
         applicationId = "com.dinotv.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 49
-        versionName = "1.0.11"
+        versionCode = 50
+        versionName = "1.0.12"
         val homeUrl = providers.gradleProperty("DINO_HOME_URL").orElse("https://home.example.invalid/tv/").get()
         val apiUrl = providers.gradleProperty("DINO_API_BASE_URL").orElse("https://home.example.invalid/api").get().trimEnd('/')
         for (url in listOf(homeUrl, apiUrl)) {
@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.dadb)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
 }

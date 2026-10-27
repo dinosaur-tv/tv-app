@@ -24,4 +24,20 @@ class MusicRemoteTest {
         assertNull(MusicRemote.take("pause", ""))
         assertNull(MusicRemote.take("", "t1"))
     }
+
+    @Test
+    fun `drives the Kinopoisk player with its own d-pad keys`() {
+        assertEquals(22, MusicRemote.playerKey("next", playing = true))
+        assertEquals(21, MusicRemote.playerKey("previous", playing = true))
+        assertEquals(23, MusicRemote.playerKey("toggle", playing = false))
+    }
+
+    @Test
+    fun `presses play and pause only when they change something`() {
+        assertEquals(23, MusicRemote.playerKey("pause", playing = true))
+        assertNull(MusicRemote.playerKey("pause", playing = false))
+        assertEquals(23, MusicRemote.playerKey("play", playing = false))
+        assertNull(MusicRemote.playerKey("play", playing = true))
+        assertNull(MusicRemote.playerKey("volume", playing = true))
+    }
 }
