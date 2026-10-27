@@ -22,6 +22,17 @@ class KinopoiskNowPlayingTest {
     }
 
     @Test
+    fun `reads an explicit track whose title ends with the E badge`() {
+        val explicit = listOf(
+            KinopoiskNowPlaying.Node(description = "7143", left = 710, top = 191, right = 1210, bottom = 691),
+            KinopoiskNowPlaying.Node(text = "7143 " + Char(0xFFFD), left = 878, top = 731, right = 1043, bottom = 785),
+            KinopoiskNowPlaying.Node(text = "TTRI", left = 420, top = 793, right = 1500, bottom = 831),
+            KinopoiskNowPlaying.Node(text = "Сейчас играет", left = 90, top = 90, right = 274, bottom = 122),
+        )
+        assertEquals(KinopoiskNowPlaying.Track("7143", "TTRI"), KinopoiskNowPlaying.read("ru.kinopoisk.tv", explicit))
+    }
+
+    @Test
     fun `does not report a film or a music recommendation as the current track`() {
         assertNull(KinopoiskNowPlaying.read("ru.kinopoisk.tv", player.filter { it.text != "Сейчас играет" }))
         assertNull(KinopoiskNowPlaying.read("another.app", player))
