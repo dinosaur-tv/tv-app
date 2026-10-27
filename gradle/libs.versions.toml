@@ -5,7 +5,7 @@ kotlin = "2.4.20"
 composeBom = "2025.02.00"
 activityCompose = "1.10.1"
 lifecycle = "2.8.7"
-coreKtx = "1.19.0"
+coreKtx = "1.19.1"
 junit = "4.13.2"
 dadb = "2.0.0"
 
