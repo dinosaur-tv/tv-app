@@ -4,15 +4,23 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
 import android.view.WindowManager
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 object LivingRoomOverlay {
     private var webView: WebView? = null
     private var windowManager: WindowManager? = null
+    private val main = Handler(Looper.getMainLooper())
+    // Window focus has to travel to the player before a key is pressed into it.
+    private const val FOCUS_HANDOFF_MS = 250L
     // Focusable so Back / Home on the physical remote can dismiss «Поверх музыки»
     // instead of silently driving the player underneath a frozen Dino picture.
     internal const val WINDOW_FLAGS = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
@@ -73,6 +81,42 @@ object LivingRoomOverlay {
             return
         }
         OverlayScreenAwake.start(app)
+    }
+
+    /**
+     * Runs [block] (off the main thread) with the player underneath holding window focus.
+     * Keys pressed for the Kinopoisk player otherwise land in Dino's own WebView, which
+     * holds focus so the physical remote's Back can dismiss it.
+     */
+    fun withoutFocus(block: () -> Unit) {
+        val done = CountDownLatch(1)
+        var lent = false
+        main.post {
+            lent = setFocusable(false)
+            done.countDown()
+        }
+        done.await(1, TimeUnit.SECONDS)
+        if (lent) SystemClock.sleep(FOCUS_HANDOFF_MS)
+        try {
+            block()
+        } finally {
+            if (lent) main.post { setFocusable(true) }
+        }
+    }
+
+    private fun setFocusable(focusable: Boolean): Boolean {
+        val screen = webView ?: return false
+        val wm = windowManager ?: return false
+        val params = screen.layoutParams as? WindowManager.LayoutParams ?: return false
+        val notFocusable = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        params.flags = if (focusable) params.flags and notFocusable.inv() else params.flags or notFocusable
+        return try {
+            wm.updateViewLayout(screen, params)
+            if (focusable) screen.requestFocus()
+            true
+        } catch (_: Exception) {
+            false
+        }
     }
 
     fun hide() {
