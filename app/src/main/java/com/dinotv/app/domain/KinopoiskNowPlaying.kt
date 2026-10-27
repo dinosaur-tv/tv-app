@@ -21,11 +21,11 @@ object KinopoiskNowPlaying {
             val name = cover.description.trim()
             if (name.isEmpty() || cover.right - cover.left < 100 || cover.bottom - cover.top < 100) continue
             val title = nodes.firstOrNull {
-                it.text.trim() == name && it.top >= cover.bottom &&
+                titleOf(it.text) == name && it.top >= cover.bottom &&
                     it.left < cover.right && it.right > cover.left
             } ?: continue
             val artist = nodes.filter {
-                it.text.isNotBlank() && it.text.trim() != name && it.top >= title.bottom &&
+                it.text.isNotBlank() && titleOf(it.text) != name && it.top >= title.bottom &&
                     it.left < title.right && it.right > title.left &&
                     it.top - title.bottom < (cover.bottom - cover.top) / 3
             }.minByOrNull { it.top }?.text?.trim().orEmpty()
@@ -33,4 +33,14 @@ object KinopoiskNowPlaying {
         }
         return null
     }
+
+    /**
+     * An explicit track carries an «E» badge drawn inline after its title. Accessibility
+     * reads it as a stray U+FFFD, so «7143 E» arrived as "7143 U+FFFD" and never matched
+     * the cover: the phone then said nothing was playing.
+     */
+    private fun titleOf(text: String): String = text.trim().trimEnd(BADGE, OBJECT).trim()
+
+    private val BADGE = Char(0xFFFD)
+    private val OBJECT = Char(0xFFFC)
 }
