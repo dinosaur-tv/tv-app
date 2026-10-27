@@ -1,6 +1,8 @@
 package com.dinotv.app
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
 import dadb.AdbKeyPair
@@ -24,10 +26,13 @@ object TvShell {
     private const val CONNECT_TIMEOUT_MS = 2_000
     // Long enough for someone to answer the debugging prompt with the physical remote.
     private const val READ_TIMEOUT_MS = 60_000
+    // A key already accepted connects in milliseconds; a slower answer means a prompt.
+    private const val PROMPT_GRACE_MS = 700L
 
     private val worker = Executors.newSingleThreadExecutor { Thread(it, TAG) }
     private var dadb: Dadb? = null
     private val warming = AtomicBoolean(false)
+    private val main = Handler(Looper.getMainLooper())
 
     /** The television has accepted this app's key at least once since it started. */
     @Volatile
@@ -77,8 +82,28 @@ object TvShell {
         return false
     }
 
-    private fun connection(context: Context): Dadb =
-        dadb ?: Dadb.create(HOST, PORT, keyPair(context), CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS).also { dadb = it }
+    private fun connection(context: Context): Dadb = dadb ?: open(context).also { dadb = it }
+
+    /**
+     * Connects now rather than on the first command. Dino's overlay is an accessibility
+     * window and is drawn above the system's «Allow debugging?» dialog, so while adbd
+     * waits for an answer the overlay steps aside and the prompt can be seen and answered.
+     */
+    private fun open(context: Context): Dadb {
+        val adb = Dadb.create(HOST, PORT, keyPair(context), CONNECT_TIMEOUT_MS, READ_TIMEOUT_MS)
+        val reveal = Runnable { LivingRoomOverlay.stepAside(true) }
+        main.postDelayed(reveal, PROMPT_GRACE_MS)
+        try {
+            adb.supportsFeature("shell_v2")
+            return adb
+        } catch (error: Throwable) {
+            adb.close()
+            throw error
+        } finally {
+            main.removeCallbacks(reveal)
+            main.post { LivingRoomOverlay.stepAside(false) }
+        }
+    }
 
     private fun close() {
         try {

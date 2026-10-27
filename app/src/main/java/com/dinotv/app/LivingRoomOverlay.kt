@@ -9,6 +9,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
+import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
 import androidx.core.content.ContextCompat
@@ -102,6 +103,12 @@ object LivingRoomOverlay {
         } finally {
             if (lent) main.post { setFocusable(true) }
         }
+    }
+
+    /** Hides Dino without dismissing it, so a system dialog underneath can be seen. */
+    fun stepAside(aside: Boolean) {
+        val screen = webView ?: return
+        screen.visibility = if (aside) View.INVISIBLE else View.VISIBLE
     }
 
     private fun setFocusable(focusable: Boolean): Boolean {
