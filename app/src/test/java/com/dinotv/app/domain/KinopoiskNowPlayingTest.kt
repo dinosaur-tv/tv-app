@@ -33,6 +33,18 @@ class KinopoiskNowPlayingTest {
     }
 
     @Test
+    fun `reads a playlist, whose header names what is playing`() {
+        val playlist = listOf(
+            KinopoiskNowPlaying.Node(description = "Мёртвый пепел", left = 710, top = 191, right = 1210, bottom = 691),
+            KinopoiskNowPlaying.Node(text = "Мёртвый пепел " + Char(0xFFFD), left = 760, top = 731, right = 1160, bottom = 785),
+            KinopoiskNowPlaying.Node(text = "Krafal", left = 420, top = 793, right = 1500, bottom = 831),
+            KinopoiskNowPlaying.Node(text = "Сейчас играет плейлист", left = 90, top = 90, right = 400, bottom = 122),
+            KinopoiskNowPlaying.Node(text = "Монополия на хасл", left = 90, top = 130, right = 400, bottom = 168),
+        )
+        assertEquals(KinopoiskNowPlaying.Track("Мёртвый пепел", "Krafal"), KinopoiskNowPlaying.read("ru.kinopoisk.tv", playlist))
+    }
+
+    @Test
     fun `does not report a film or a music recommendation as the current track`() {
         assertNull(KinopoiskNowPlaying.read("ru.kinopoisk.tv", player.filter { it.text != "Сейчас играет" }))
         assertNull(KinopoiskNowPlaying.read("another.app", player))
