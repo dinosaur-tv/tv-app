@@ -1,5 +1,5 @@
 [versions]
-agp = "9.4.0"
+agp = "9.4.1"
 # Only for the Compose compiler plugin: AGP 9 brings Kotlin itself, but still needs this one.
 kotlin = "2.4.20"
 composeBom = "2025.02.00"
