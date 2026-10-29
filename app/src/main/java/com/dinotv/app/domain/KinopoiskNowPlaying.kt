@@ -14,7 +14,7 @@ object KinopoiskNowPlaying {
     data class Track(val title: String, val artist: String)
 
     fun read(packageName: String, nodes: List<Node>): Track? {
-        if (packageName != "ru.kinopoisk.tv" || nodes.none { it.text.trim() == "Сейчас играет" }) return null
+        if (packageName != "ru.kinopoisk.tv" || nodes.none { isHeader(it.text) }) return null
         // The cover's accessible name repeats the title below it. This distinguishes
         // actual track metadata from the header, playlist name and playback controls.
         for (cover in nodes) {
@@ -33,6 +33,15 @@ object KinopoiskNowPlaying {
         }
         return null
     }
+
+    /**
+     * «Сейчас играет» over My Wave, but «Сейчас играет плейлист» (or «альбом») over the
+     * rest. Matching only the first left every playlist unread; the TV then fell back to a
+     * film's leftover session and the phone showed that film, paused.
+     */
+    private fun isHeader(text: String): Boolean = text.trim().startsWith(HEADER)
+
+    private const val HEADER = "Сейчас играет"
 
     /**
      * An explicit track carries an «E» badge drawn inline after its title. Accessibility

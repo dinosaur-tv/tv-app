@@ -267,8 +267,13 @@ object NowPlayingDesk {
 
     private fun fromController(controller: MediaController?, context: Context): NowPlayingTrack? {
         if (controller == null) return null
-        val meta = controller.metadata
         val state = controller.playbackState?.state
+        // Kinopoisk keeps the session of the last film alive (state NONE, the episode as
+        // its title) while its music player plays without one. Reading it named the film
+        // as the track, always paused. A session that neither plays nor holds a paused
+        // item has nothing to say about what is on.
+        if (state == null || state in DEAD_STATES) return null
+        val meta = controller.metadata
         val playing = state == PlaybackState.STATE_PLAYING || state == PlaybackState.STATE_BUFFERING
         val title = meta?.string(
             MediaMetadata.METADATA_KEY_TITLE,
@@ -295,6 +300,8 @@ object NowPlayingDesk {
             allowUntitled = playing || TvAudio.isPlaying(context),
         )
     }
+
+    private val DEAD_STATES = setOf(PlaybackState.STATE_NONE, PlaybackState.STATE_STOPPED, PlaybackState.STATE_ERROR)
 
     private fun MediaMetadata.string(vararg keys: String): String? {
         for (key in keys) {
